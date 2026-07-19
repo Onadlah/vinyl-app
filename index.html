@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Vinyl Collection Tracker</title>
+    <title>Vinyl App Database</title>
     
     <!-- PWA Links -->
     <link rel="manifest" href="./manifest.json">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Vinyl Collection Tracker">
+    <meta name="apple-mobile-web-app-title" content="VinylApp">
     <meta name="theme-color" content="#0f172a">
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -55,8 +55,8 @@
         // ==========================================
         // 🛑 IMPORTANT: PASTE YOUR KEYS HERE 🛑
         // ==========================================
-        const YOUR_GOOGLE_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxvHYu3RPNSTFCLQMc8yZ15zNqFK1SI4nAGYVEqmAs8jgTdTIwB6iRXNlNuC8V5LLBwzg/exec";
-        const YOUR_DISCOGS_TOKEN = "BOCurUioPwuIFSntYKnKzhwKdWISmOEaFqPUMclj";
+        const YOUR_GOOGLE_WEB_APP_URL = "YOUR_GOOGLE_WEB_APP_URL";
+        const YOUR_DISCOGS_TOKEN = "YOUR_DISCOGS_TOKEN";
         
         // Global State
         let collectionData = [];
@@ -80,7 +80,7 @@
             <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center shadow-lg">
                 <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="2"/><circle cx="12" cy="12" r="3" stroke-width="2"/></svg>
             </div>
-            <h1 class="text-xl font-bold tracking-tight">Vinyl Collection Tracker</h1>
+            <h1 class="text-xl font-bold tracking-tight">Vinyl App Database</h1>
         </div>
         <div id="sync-status" class="text-xs font-medium px-3 py-1 rounded-full bg-slate-800 text-slate-300 border border-slate-700">Offline</div>
     </header>
@@ -131,10 +131,18 @@
         <!-- TAB 2: COLLECTION -->
         <div id="tab-collection" class="hidden space-y-4">
             
-            <!-- Filters -->
+            <!-- Filters & Search -->
             <div class="space-y-3 pb-2">
                 <h2 class="text-2xl font-semibold px-2">My Library</h2>
                 
+                <!-- Live Search Bar -->
+                <div class="px-2 pb-1">
+                    <div class="relative">
+                        <input type="text" id="library-search" oninput="renderCollection()" placeholder="Search artist or album..." class="w-full bg-slate-900/80 border border-slate-700 rounded-xl pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-indigo-500 transition-colors text-white placeholder-slate-500 shadow-inner">
+                        <svg class="w-5 h-5 absolute left-3 top-3 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                    </div>
+                </div>
+
                 <!-- Status & Genre Chips -->
                 <div class="flex overflow-x-auto hide-scrollbar gap-2 px-2 pb-2" id="filter-container">
                     <button onclick="applyFilter('All')" class="filter-btn active whitespace-nowrap px-4 py-2 rounded-full text-sm font-medium bg-indigo-600 text-white transition-colors">All</button>
@@ -153,7 +161,7 @@
                 <div class="loader"></div>
             </div>
             <div id="collection-empty" class="text-center py-12 hidden">
-                <p class="text-slate-400">Nothing here yet.</p>
+                <p class="text-slate-400">No records match your search.</p>
             </div>
         </div>
     </main>
@@ -334,36 +342,33 @@
                 toast.style.transform = 'translateY(-20px)';
                 toast.style.transition = 'all 0.3s ease';
                 setTimeout(() => toast.remove(), 300);
-            }, 3000);
+            }, 3500);
         }
 
         // --- Android Back Button Fix (History API) ---
         function openModal(id) {
             document.getElementById(id).classList.remove('hidden');
             document.getElementById(id).classList.add('flex');
-            // Create a fake history state so the Android back button intercepts it
             history.pushState({ modal: id }, "", `#${id}`);
         }
 
         function closeModal(id, goBack = true) {
             document.getElementById(id).classList.add('hidden');
             document.getElementById(id).classList.remove('flex');
-            // If the user closed it via an X button or tapping background, we pop the fake history
             if (goBack && window.location.hash === `#${id}`) {
                 history.back();
             }
         }
 
         window.addEventListener('popstate', (event) => {
-            // When user hits Android Back Button, close any open modals
             document.querySelectorAll('[id$="-modal"]').forEach(modal => {
                 if (!modal.classList.contains('hidden')) {
-                    // Pass 'false' so we don't trigger history.back() again
                     closeModal(modal.id, false); 
                 }
             });
         });
 
+        // --- Core Navigation ---
         function switchTab(tabId) {
             activeTab = tabId;
             document.getElementById('tab-scanner').classList.toggle('hidden', tabId !== 'scanner');
@@ -375,25 +380,34 @@
             document.getElementById('nav-collection').classList.toggle('text-indigo-400', tabId === 'collection');
             document.getElementById('nav-collection').classList.toggle('text-slate-500', tabId !== 'collection');
 
-            // Cleanup scanner if navigating away
             if (tabId !== 'scanner' && html5QrCode) {
                 stopScanner();
             }
 
             if (tabId === 'collection') {
-                fetchCollection();
+                // Initial load if array is empty, otherwise just render
+                if (collectionData.length === 0) fetchCollection();
+                else renderCollection();
             }
         }
 
         // --- Form Reset Logic (Fixing Sticky Notes) ---
         function resetFormFields() {
+            document.getElementById('form-artist').value = '';
+            document.getElementById('form-album').value = '';
+            document.getElementById('form-year').value = '';
             document.getElementById('form-notes').value = '';
             document.getElementById('form-vinyl-cond').value = 'M';
             document.getElementById('form-sleeve-cond').value = 'M';
             document.getElementById('form-status').value = 'Collection';
         }
 
-        // --- STREAMING_CHUNK:Implementing Discogs API Logic... ---
+        function clearSearchUI() {
+            document.getElementById('manual-search-input').value = '';
+            document.getElementById('search-results').innerHTML = '';
+        }
+
+        // --- STREAMING_CHUNK:Implementing Discogs Search... ---
         async function fetchFromDiscogs(query, isBarcode = true) {
             if (YOUR_DISCOGS_TOKEN.includes("YOUR_")) {
                 showToast("Please add your Discogs API Token in the code.", "error");
@@ -432,9 +446,7 @@
             const container = document.getElementById('search-results');
             container.innerHTML = '<h3 class="font-semibold text-sm text-slate-400 px-2 mt-4">Top Results</h3>';
             
-            // Show top 3 results
             results.slice(0, 3).forEach(release => {
-                // Handle parsing Discogs title ("Artist - Title")
                 let parts = release.title.split(' - ');
                 let artist = parts[0] || "Unknown";
                 let album = parts[1] || release.title;
@@ -461,16 +473,15 @@
             });
         }
 
-        // --- STREAMING_CHUNK:Implementing Camera Scanner Logic... ---
+        // --- STREAMING_CHUNK:Implementing Camera Scanner... ---
         function startScanner() {
             const readerContainer = document.getElementById('reader-container');
             const scannerButtons = document.getElementById('scanner-buttons');
             
             readerContainer.classList.remove('hidden');
             readerContainer.classList.add('flex');
-            scannerButtons.classList.add('hidden'); // Hide the other buttons while scanning
-            
-            document.getElementById('search-results').innerHTML = ''; // Clear old results
+            scannerButtons.classList.add('hidden');
+            clearSearchUI();
             
             if (!html5QrCode) {
                 html5QrCode = new Html5Qrcode("reader");
@@ -479,27 +490,22 @@
             const config = { fps: 10, qrbox: { width: 250, height: 100 }, aspectRatio: 1.0 };
             
             html5QrCode.start({ facingMode: "environment" }, config, async (decodedText) => {
-                // Success!
                 stopScanner();
                 showToast(`Barcode Scanned: ${decodedText}`, 'success');
                 
                 const results = await fetchFromDiscogs(decodedText, true);
                 if (results) {
-                    // Check for duplicates first
-                    const duplicate = collectionData.find(item => item[1] == results[0].id); // Col 1 is Release ID
+                    // Check for duplicate immediately on scan
+                    const duplicate = collectionData.find(item => item[1] == results[0].id);
                     if (duplicate) {
-                        const statusStr = duplicate[11] || "Collection";
-                        showToast(`Notice: This is already in your ${statusStr}!`, 'warning');
+                        showToast(`Warning: This is already in your ${duplicate[11] || 'Library'}!`, 'warning');
                     }
                     displaySearchResults(results);
                 } else {
-                    // If barcode fails to find anything, offer manual override
                     openManualOverride();
-                    showToast(`Barcode not found in database. Please enter manually.`, 'warning');
+                    showToast(`Barcode not found. Please enter manually.`, 'warning');
                 }
-            }, (error) => {
-                // Scanning (ignore errors as it scans frames constantly)
-            }).catch(err => {
+            }, (error) => {}).catch(err => {
                 showToast("Camera access denied or unavailable.", "error");
                 stopScanner();
             });
@@ -511,62 +517,77 @@
                     document.getElementById('reader-container').classList.add('hidden');
                     document.getElementById('reader-container').classList.remove('flex');
                     document.getElementById('scanner-buttons').classList.remove('hidden');
-                }).catch(err => {
-                    console.log("Error stopping scanner.", err);
-                    document.getElementById('reader-container').classList.add('hidden');
-                    document.getElementById('reader-container').classList.remove('flex');
-                    document.getElementById('scanner-buttons').classList.remove('hidden');
-                });
+                }).catch(err => console.log(err));
             }
         }
 
-        // --- STREAMING_CHUNK:Implementing Form & Google Sheets Logic... ---
+        // --- STREAMING_CHUNK:Implementing Database Submission Logic... ---
         function openManualOverride() {
-            currentRelease = {}; // clear API data
-            document.getElementById('form-artist').value = '';
-            document.getElementById('form-album').value = '';
-            document.getElementById('form-year').value = '';
+            currentRelease = {}; 
+            resetFormFields();
             document.getElementById('form-thumb').src = 'https://placehold.co/400x400/1e293b/ffffff?text=Custom';
-            
-            resetFormFields(); // Fix for sticky notes
             openModal('form-modal');
         }
 
         function prepFormFromAPI(release, artist, album) {
             currentRelease = release;
+            resetFormFields();
+            
             document.getElementById('form-artist').value = artist;
             document.getElementById('form-album').value = album;
             document.getElementById('form-year').value = release.year || '';
             document.getElementById('form-thumb').src = release.thumb || 'https://placehold.co/400x400/1e293b/ffffff?text=No+Cover';
             
-            resetFormFields(); // Fix for sticky notes
             openModal('form-modal');
         }
 
         async function submitToGoogleSheet() {
             if (YOUR_GOOGLE_WEB_APP_URL.includes("YOUR_")) {
-                showToast("Please add your Google Web App URL in the code.", "error");
+                showToast("Please add your Google Web App URL.", "error");
                 return;
+            }
+
+            const artistInput = document.getElementById('form-artist').value.trim();
+            const albumInput = document.getElementById('form-album').value.trim();
+
+            if (!artistInput || !albumInput) {
+                showToast("Artist and Album are required.", "warning");
+                return;
+            }
+
+            // IRONCLAD DUPLICATE CHECK
+            const isDuplicate = collectionData.some(row => {
+                const rowId = row[1];
+                const rowArtist = (row[2] || '').toLowerCase();
+                const rowAlbum = (row[3] || '').toLowerCase();
+                
+                // Match by Discogs ID (if we have one)
+                if (currentRelease.id && rowId == currentRelease.id) return true;
+                // Match by exact text string
+                if (rowArtist === artistInput.toLowerCase() && rowAlbum === albumInput.toLowerCase()) return true;
+                
+                return false;
+            });
+
+            if (isDuplicate) {
+                showToast("Error: This album is already in your library!", "error");
+                return; // Stop the save
             }
 
             const btn = document.getElementById('submit-btn');
             btn.innerHTML = '<div class="loader !w-5 !h-5 !border-t-white"></div>';
             btn.disabled = true;
 
-            // Extract primary genre or default
             let extractedGenre = "Unknown";
             if (currentRelease.genre && currentRelease.genre.length > 0) extractedGenre = currentRelease.genre[0];
 
-            // Build Discogs URL
             let dUrl = "";
-            if (currentRelease.uri) {
-                dUrl = `https://www.discogs.com${currentRelease.uri}`;
-            }
+            if (currentRelease.uri) dUrl = `https://www.discogs.com${currentRelease.uri}`;
 
             const payload = {
                 releaseId: currentRelease.id || `MANUAL-${Date.now()}`,
-                artist: document.getElementById('form-artist').value,
-                album: document.getElementById('form-album').value,
+                artist: artistInput,
+                album: albumInput,
                 year: document.getElementById('form-year').value,
                 vinylCondition: document.getElementById('form-vinyl-cond').value,
                 sleeveCondition: document.getElementById('form-sleeve-cond').value,
@@ -574,44 +595,51 @@
                 imageUrl: document.getElementById('form-thumb').src,
                 genre: extractedGenre,
                 discogsUrl: dUrl,
-                status: document.getElementById('form-status').value // "Collection" or "Wishlist"
+                status: document.getElementById('form-status').value
             };
 
             try {
-                const response = await fetch(YOUR_GOOGLE_WEB_APP_URL, {
+                // The False-Error Fix: using await with no-cors.
+                await fetch(YOUR_GOOGLE_WEB_APP_URL, {
                     method: 'POST',
                     mode: 'no-cors',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
                 
+                // If the fetch doesn't hard-fail (network down), we assume success!
                 showToast(`Successfully added to ${payload.status}!`, 'success');
                 closeModal('form-modal');
-                document.getElementById('search-results').innerHTML = ''; // clear results
                 
-                // Switch to collection to see it
-                switchTab('collection');
+                // Reset scanner workflow
+                clearSearchUI();
+                
+                // Secretly fetch collection in background to sync database
+                fetchCollection(true);
+                
             } catch (error) {
-                showToast("Error saving to database.", "error");
+                showToast("Network Error: Could not save to database.", "error");
             } finally {
                 btn.innerHTML = '<span>Save Record</span>';
                 btn.disabled = false;
             }
         }
 
-        // --- STREAMING_CHUNK:Implementing Alphabetical Sorting & Rendering... ---
+        // --- STREAMING_CHUNK:Implementing Data Sanitization & Live Search... ---
         let currentFilter = 'All';
 
-        async function fetchCollection() {
+        async function fetchCollection(isBackground = false) {
             if (YOUR_GOOGLE_WEB_APP_URL.includes("YOUR_")) {
-                // Load Mock Data if keys aren't added yet so user can preview
-                loadMockData();
+                if (!isBackground) loadMockData();
                 return;
             }
 
-            document.getElementById('collection-grid').innerHTML = '';
-            document.getElementById('collection-loading').classList.remove('hidden');
-            document.getElementById('collection-empty').classList.add('hidden');
+            if (!isBackground) {
+                document.getElementById('collection-grid').innerHTML = '';
+                document.getElementById('collection-loading').classList.remove('hidden');
+                document.getElementById('collection-empty').classList.add('hidden');
+            }
+            
             document.getElementById('sync-status').textContent = 'Syncing...';
             document.getElementById('sync-status').classList.add('animate-pulse');
 
@@ -619,44 +647,51 @@
                 const response = await fetch(YOUR_GOOGLE_WEB_APP_URL);
                 const data = await response.json();
                 
-                // Remove header row
-                data.shift(); 
+                data.shift(); // Remove header row
                 
-                // Sort Alphabetically by Artist (Column Index 2)
-                collectionData = data.sort((a, b) => {
-                    let artistA = (a[2] || 'Unknown').toLowerCase();
-                    let artistB = (b[2] || 'Unknown').toLowerCase();
+                // DATA SANITIZER: Filter out empty/broken rows before doing anything
+                const cleanData = data.filter(row => {
+                    const hasArtist = row[2] && String(row[2]).trim() !== '';
+                    const hasAlbum = row[3] && String(row[3]).trim() !== '';
+                    return hasArtist && hasAlbum;
+                });
+                
+                // Sort A-Z strictly by Artist
+                collectionData = cleanData.sort((a, b) => {
+                    let artistA = String(a[2]).toLowerCase();
+                    let artistB = String(b[2]).toLowerCase();
                     return artistA.localeCompare(artistB);
                 });
                 
                 document.getElementById('sync-status').textContent = 'Synced';
                 document.getElementById('sync-status').classList.remove('animate-pulse');
                 
-                renderFilters();
-                renderCollection();
+                if (activeTab === 'collection' || isBackground) {
+                    renderFilters();
+                    renderCollection();
+                }
             } catch (error) {
                 showToast("Failed to load collection.", "error");
                 document.getElementById('sync-status').textContent = 'Error';
                 document.getElementById('sync-status').classList.remove('animate-pulse');
             } finally {
-                document.getElementById('collection-loading').classList.add('hidden');
+                if (!isBackground) {
+                    document.getElementById('collection-loading').classList.add('hidden');
+                }
             }
         }
 
         function renderFilters() {
-            // Extract unique genres from data (Column 9)
             const genres = new Set();
             collectionData.forEach(row => {
                 if (row[9] && row[9] !== "Unknown") genres.add(row[9]);
             });
 
             const container = document.getElementById('filter-container');
-            // Keep the first 3 permanent buttons (All, Owned, Wishlist)
             const baseButtons = container.innerHTML.split('<!-- Genre chips will be injected here -->')[0];
             
             let genreChips = '<!-- Genre chips will be injected here -->';
             
-            // Sort genres alphabetically
             Array.from(genres).sort().forEach(genre => {
                 const safeGenre = genre.replace(/'/g, "\\'");
                 genreChips += `<button onclick="applyFilter('${safeGenre}')" class="filter-btn whitespace-nowrap px-4 py-2 rounded-full text-sm font-medium bg-slate-800 text-slate-300 transition-colors border border-slate-700">${genre}</button>`;
@@ -687,25 +722,34 @@
 
         function renderCollection() {
             const grid = document.getElementById('collection-grid');
+            const searchTerm = document.getElementById('library-search').value.toLowerCase();
             grid.innerHTML = '';
             
-            // Filter Data
+            // 1. Filter by Chip
             let displayData = collectionData;
-            
             if (currentFilter === 'Collection' || currentFilter === 'Wishlist') {
-                displayData = collectionData.filter(row => row[11] === currentFilter); // Col 11 is Status
+                displayData = displayData.filter(row => row[11] === currentFilter); 
             } else if (currentFilter !== 'All') {
-                displayData = collectionData.filter(row => row[9] === currentFilter); // Col 9 is Genre
+                displayData = displayData.filter(row => row[9] === currentFilter); 
+            }
+
+            // 2. Filter by Live Search Bar
+            if (searchTerm) {
+                displayData = displayData.filter(row => {
+                    const artist = String(row[2]).toLowerCase();
+                    const album = String(row[3]).toLowerCase();
+                    return artist.includes(searchTerm) || album.includes(searchTerm);
+                });
             }
 
             if (displayData.length === 0) {
                 document.getElementById('collection-empty').classList.remove('hidden');
                 return;
             }
+            
             document.getElementById('collection-empty').classList.add('hidden');
 
-            displayData.forEach((row, index) => {
-                // Data Mapping based on Phase 4 Sheet setup
+            displayData.forEach((row) => {
                 const item = {
                     artist: row[2] || 'Unknown',
                     album: row[3] || 'Unknown Title',
@@ -721,11 +765,9 @@
 
                 const card = document.createElement('div');
                 card.className = "glass rounded-2xl overflow-hidden shadow-lg active:scale-95 transition-transform cursor-pointer relative border border-slate-700/50";
-                // Store stringified item safely for onClick
                 const safeItem = encodeURIComponent(JSON.stringify(item));
                 card.onclick = () => openDetailView(safeItem);
                 
-                // Color code the status badge
                 const badgeColor = item.status === 'Wishlist' ? 'bg-amber-500/90' : 'bg-indigo-600/90';
 
                 card.innerHTML = `
@@ -752,9 +794,8 @@
             document.getElementById('detail-vinyl-cond').textContent = item.vinylCond;
             document.getElementById('detail-sleeve-cond').textContent = item.sleeveCond;
             
-            // Format notes beautifully if empty
             const notesEl = document.getElementById('detail-notes');
-            if(item.notes.trim() === '') {
+            if(!item.notes || item.notes.trim() === '') {
                  notesEl.innerHTML = `<span class="italic text-slate-500">No personal notes added.</span>`;
             } else {
                  notesEl.textContent = item.notes;
@@ -766,13 +807,11 @@
                 ? 'inline-block px-2 py-1 bg-amber-500 rounded text-[10px] text-white font-bold uppercase tracking-wider mb-2 shadow' 
                 : 'inline-block px-2 py-1 bg-indigo-600 rounded text-[10px] text-white font-bold uppercase tracking-wider mb-2 shadow';
 
-            // Setup Tags (Year and Genre)
             let tagsHtml = '';
             if(item.year) tagsHtml += `<span class="px-2 py-1 bg-slate-800 rounded-md border border-slate-700 text-slate-300 shadow-sm">${item.year}</span>`;
             if(item.genre && item.genre !== 'Unknown') tagsHtml += `<span class="px-2 py-1 bg-slate-800 rounded-md border border-slate-700 text-slate-300 shadow-sm">${item.genre}</span>`;
             document.getElementById('detail-tags').innerHTML = tagsHtml;
 
-            // Setup Discogs Link Button
             const linkContainer = document.getElementById('detail-discogs-container');
             if (item.dUrl && item.dUrl.startsWith('http')) {
                 linkContainer.innerHTML = `
@@ -788,19 +827,15 @@
             openModal('detail-modal');
         }
 
-        // Mock Data for Preview Canvas
         function loadMockData() {
             let rawData = [
                 ['', '123', 'Pink Floyd', 'The Dark Side of the Moon', '1973', 'VG+', 'VG', 'Original US press.', 'https://upload.wikimedia.org/wikipedia/en/3/3b/Dark_Side_of_the_Moon.png', 'Rock', 'https://www.discogs.com/master/10362', 'Collection'],
-                ['', '124', 'Fleetwood Mac', 'Rumours', '1977', 'M', 'NM', 'Repress, 180g.', 'https://upload.wikimedia.org/wikipedia/en/f/fb/FMacRumours.PNG', 'Rock', 'https://www.discogs.com/master/38722', 'Collection'],
-                ['', '125', 'Daft Punk', 'Discovery', '2001', 'NM', 'NM', 'Need this for the DJ set.', 'https://upload.wikimedia.org/wikipedia/en/a/ae/Daft_Punk_-_Discovery.jpg', 'Electronic', 'https://www.discogs.com/master/26647', 'Wishlist'],
-                ['', '126', 'Miles Davis', 'Kind of Blue', '1959', 'VG', 'G+', 'Scratches on side 2.', 'https://upload.wikimedia.org/wikipedia/en/9/9c/MilesDavisKindofBlue.jpg', 'Jazz', '', 'Collection']
+                ['', '124', 'Fleetwood Mac', 'Rumours', '1977', 'M', 'NM', 'Repress, 180g.', 'https://upload.wikimedia.org/wikipedia/en/f/fb/FMacRumours.PNG', 'Rock', 'https://www.discogs.com/master/38722', 'Collection']
             ];
             
-            // Apply Alphabetical sort for preview as well
             collectionData = rawData.sort((a, b) => {
-                let artistA = (a[2] || 'Unknown').toLowerCase();
-                let artistB = (b[2] || 'Unknown').toLowerCase();
+                let artistA = (a[2] || '').toLowerCase();
+                let artistB = (b[2] || '').toLowerCase();
                 return artistA.localeCompare(artistB);
             });
             
