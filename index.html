@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Vinyl Collection Tracker</title>
     
-    <!-- PWA Links (This connects to the files you just made!) -->
+    <!-- PWA Links -->
     <link rel="manifest" href="./manifest.json">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="VinylApp">
+    <meta name="apple-mobile-web-app-title" content="Vinyl Collection Tracker">
     <meta name="theme-color" content="#0f172a">
 
     <script src="https://cdn.tailwindcss.com"></script>
@@ -80,7 +80,7 @@
             <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center shadow-lg">
                 <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="2"/><circle cx="12" cy="12" r="3" stroke-width="2"/></svg>
             </div>
-            <h1 class="text-xl font-bold tracking-tight">VinylApp</h1>
+            <h1 class="text-xl font-bold tracking-tight">Vinyl Collection Tracker</h1>
         </div>
         <div id="sync-status" class="text-xs font-medium px-3 py-1 rounded-full bg-slate-800 text-slate-300 border border-slate-700">Offline</div>
     </header>
@@ -95,10 +95,15 @@
                 <h2 class="text-2xl font-semibold">Add to Library</h2>
                 <p class="text-slate-400 text-sm">Scan a barcode, search Discogs, or add manually.</p>
                 
-                <!-- Camera Viewport -->
-                <div id="reader" class="w-full bg-slate-900 rounded-2xl overflow-hidden border border-slate-700 hidden"></div>
+                <!-- Camera Viewport Container with Cancel Button -->
+                <div id="reader-container" class="w-full hidden flex-col gap-2">
+                    <div id="reader" class="w-full bg-slate-900 rounded-2xl overflow-hidden border border-slate-700"></div>
+                    <button onclick="stopScanner()" class="w-full py-3 bg-rose-600 hover:bg-rose-500 transition-colors rounded-xl font-medium text-white shadow-lg shadow-rose-600/20">
+                        Cancel Scan
+                    </button>
+                </div>
                 
-                <div class="flex flex-col gap-3 pt-2">
+                <div class="flex flex-col gap-3 pt-2" id="scanner-buttons">
                     <button onclick="startScanner()" class="w-full py-4 bg-indigo-600 hover:bg-indigo-500 transition-colors rounded-xl font-semibold flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h4a1 1 0 010 2H5v3a1 1 0 01-2 0V4zm14-1a1 1 0 011 1v3a1 1 0 01-2 0V5h-3a1 1 0 010-2h4zM3 20a1 1 0 011-1h4a1 1 0 010 2H5v-3a1 1 0 01-2 0v3zm14 1a1 1 0 011-1v-3a1 1 0 01-2 0v3h-3a1 1 0 010 2h4z"/></svg>
                         Scan Barcode
@@ -254,7 +259,7 @@
         <div class="absolute inset-0 bg-black/60 backdrop-blur-sm modal-enter pointer-events-auto" onclick="closeModal('detail-modal')"></div>
         <div class="glass-panel w-full sm:w-[400px] max-h-[90vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl p-0 modal-content-enter pointer-events-auto border-t sm:border border-slate-700 shadow-2xl relative">
             <div class="absolute top-4 right-4 z-10">
-                <button onclick="closeModal('detail-modal')" class="w-8 h-8 bg-black/50 backdrop-blur rounded-full flex items-center justify-center text-white">
+                <button onclick="closeModal('detail-modal')" class="w-8 h-8 bg-black/50 backdrop-blur rounded-full flex items-center justify-center text-white hover:bg-black/70 transition-colors">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                 </button>
             </div>
@@ -332,15 +337,32 @@
             }, 3000);
         }
 
+        // --- Android Back Button Fix (History API) ---
         function openModal(id) {
             document.getElementById(id).classList.remove('hidden');
             document.getElementById(id).classList.add('flex');
+            // Create a fake history state so the Android back button intercepts it
+            history.pushState({ modal: id }, "", `#${id}`);
         }
 
-        function closeModal(id) {
+        function closeModal(id, goBack = true) {
             document.getElementById(id).classList.add('hidden');
             document.getElementById(id).classList.remove('flex');
+            // If the user closed it via an X button or tapping background, we pop the fake history
+            if (goBack && window.location.hash === `#${id}`) {
+                history.back();
+            }
         }
+
+        window.addEventListener('popstate', (event) => {
+            // When user hits Android Back Button, close any open modals
+            document.querySelectorAll('[id$="-modal"]').forEach(modal => {
+                if (!modal.classList.contains('hidden')) {
+                    // Pass 'false' so we don't trigger history.back() again
+                    closeModal(modal.id, false); 
+                }
+            });
+        });
 
         function switchTab(tabId) {
             activeTab = tabId;
@@ -355,8 +377,7 @@
 
             // Cleanup scanner if navigating away
             if (tabId !== 'scanner' && html5QrCode) {
-                html5QrCode.stop().catch(console.error);
-                document.getElementById('reader').classList.add('hidden');
+                stopScanner();
             }
 
             if (tabId === 'collection') {
@@ -364,7 +385,15 @@
             }
         }
 
-        // --- Discogs API Logic ---
+        // --- Form Reset Logic (Fixing Sticky Notes) ---
+        function resetFormFields() {
+            document.getElementById('form-notes').value = '';
+            document.getElementById('form-vinyl-cond').value = 'M';
+            document.getElementById('form-sleeve-cond').value = 'M';
+            document.getElementById('form-status').value = 'Collection';
+        }
+
+        // --- STREAMING_CHUNK:Implementing Discogs API Logic... ---
         async function fetchFromDiscogs(query, isBarcode = true) {
             if (YOUR_DISCOGS_TOKEN.includes("YOUR_")) {
                 showToast("Please add your Discogs API Token in the code.", "error");
@@ -432,10 +461,15 @@
             });
         }
 
-        // --- Barcode Scanner Logic ---
+        // --- STREAMING_CHUNK:Implementing Camera Scanner Logic... ---
         function startScanner() {
-            const readerElement = document.getElementById('reader');
-            readerElement.classList.remove('hidden');
+            const readerContainer = document.getElementById('reader-container');
+            const scannerButtons = document.getElementById('scanner-buttons');
+            
+            readerContainer.classList.remove('hidden');
+            readerContainer.classList.add('flex');
+            scannerButtons.classList.add('hidden'); // Hide the other buttons while scanning
+            
             document.getElementById('search-results').innerHTML = ''; // Clear old results
             
             if (!html5QrCode) {
@@ -446,8 +480,7 @@
             
             html5QrCode.start({ facingMode: "environment" }, config, async (decodedText) => {
                 // Success!
-                html5QrCode.stop();
-                readerElement.classList.add('hidden');
+                stopScanner();
                 showToast(`Barcode Scanned: ${decodedText}`, 'success');
                 
                 const results = await fetchFromDiscogs(decodedText, true);
@@ -468,17 +501,34 @@
                 // Scanning (ignore errors as it scans frames constantly)
             }).catch(err => {
                 showToast("Camera access denied or unavailable.", "error");
-                readerElement.classList.add('hidden');
+                stopScanner();
             });
         }
 
-        // --- Form & Google Sheets Logic ---
+        function stopScanner() {
+            if (html5QrCode) {
+                html5QrCode.stop().then(() => {
+                    document.getElementById('reader-container').classList.add('hidden');
+                    document.getElementById('reader-container').classList.remove('flex');
+                    document.getElementById('scanner-buttons').classList.remove('hidden');
+                }).catch(err => {
+                    console.log("Error stopping scanner.", err);
+                    document.getElementById('reader-container').classList.add('hidden');
+                    document.getElementById('reader-container').classList.remove('flex');
+                    document.getElementById('scanner-buttons').classList.remove('hidden');
+                });
+            }
+        }
+
+        // --- STREAMING_CHUNK:Implementing Form & Google Sheets Logic... ---
         function openManualOverride() {
             currentRelease = {}; // clear API data
             document.getElementById('form-artist').value = '';
             document.getElementById('form-album').value = '';
             document.getElementById('form-year').value = '';
             document.getElementById('form-thumb').src = 'https://placehold.co/400x400/1e293b/ffffff?text=Custom';
+            
+            resetFormFields(); // Fix for sticky notes
             openModal('form-modal');
         }
 
@@ -489,6 +539,7 @@
             document.getElementById('form-year').value = release.year || '';
             document.getElementById('form-thumb').src = release.thumb || 'https://placehold.co/400x400/1e293b/ffffff?text=No+Cover';
             
+            resetFormFields(); // Fix for sticky notes
             openModal('form-modal');
         }
 
@@ -548,7 +599,7 @@
             }
         }
 
-        // --- Collection & Rendering Logic ---
+        // --- STREAMING_CHUNK:Implementing Alphabetical Sorting & Rendering... ---
         let currentFilter = 'All';
 
         async function fetchCollection() {
@@ -570,8 +621,13 @@
                 
                 // Remove header row
                 data.shift(); 
-                // Sort newest first
-                collectionData = data.reverse();
+                
+                // Sort Alphabetically by Artist (Column Index 2)
+                collectionData = data.sort((a, b) => {
+                    let artistA = (a[2] || 'Unknown').toLowerCase();
+                    let artistB = (b[2] || 'Unknown').toLowerCase();
+                    return artistA.localeCompare(artistB);
+                });
                 
                 document.getElementById('sync-status').textContent = 'Synced';
                 document.getElementById('sync-status').classList.remove('animate-pulse');
@@ -599,8 +655,9 @@
             const baseButtons = container.innerHTML.split('<!-- Genre chips will be injected here -->')[0];
             
             let genreChips = '<!-- Genre chips will be injected here -->';
-            genres.forEach(genre => {
-                // Ensure safe string for function call
+            
+            // Sort genres alphabetically
+            Array.from(genres).sort().forEach(genre => {
                 const safeGenre = genre.replace(/'/g, "\\'");
                 genreChips += `<button onclick="applyFilter('${safeGenre}')" class="filter-btn whitespace-nowrap px-4 py-2 rounded-full text-sm font-medium bg-slate-800 text-slate-300 transition-colors border border-slate-700">${genre}</button>`;
             });
@@ -694,7 +751,14 @@
             document.getElementById('detail-artist').textContent = item.artist;
             document.getElementById('detail-vinyl-cond').textContent = item.vinylCond;
             document.getElementById('detail-sleeve-cond').textContent = item.sleeveCond;
-            document.getElementById('detail-notes').textContent = item.notes;
+            
+            // Format notes beautifully if empty
+            const notesEl = document.getElementById('detail-notes');
+            if(item.notes.trim() === '') {
+                 notesEl.innerHTML = `<span class="italic text-slate-500">No personal notes added.</span>`;
+            } else {
+                 notesEl.textContent = item.notes;
+            }
             
             const statusBadge = document.getElementById('detail-status');
             statusBadge.textContent = item.status;
@@ -726,12 +790,20 @@
 
         // Mock Data for Preview Canvas
         function loadMockData() {
-            collectionData = [
+            let rawData = [
                 ['', '123', 'Pink Floyd', 'The Dark Side of the Moon', '1973', 'VG+', 'VG', 'Original US press.', 'https://upload.wikimedia.org/wikipedia/en/3/3b/Dark_Side_of_the_Moon.png', 'Rock', 'https://www.discogs.com/master/10362', 'Collection'],
                 ['', '124', 'Fleetwood Mac', 'Rumours', '1977', 'M', 'NM', 'Repress, 180g.', 'https://upload.wikimedia.org/wikipedia/en/f/fb/FMacRumours.PNG', 'Rock', 'https://www.discogs.com/master/38722', 'Collection'],
                 ['', '125', 'Daft Punk', 'Discovery', '2001', 'NM', 'NM', 'Need this for the DJ set.', 'https://upload.wikimedia.org/wikipedia/en/a/ae/Daft_Punk_-_Discovery.jpg', 'Electronic', 'https://www.discogs.com/master/26647', 'Wishlist'],
                 ['', '126', 'Miles Davis', 'Kind of Blue', '1959', 'VG', 'G+', 'Scratches on side 2.', 'https://upload.wikimedia.org/wikipedia/en/9/9c/MilesDavisKindofBlue.jpg', 'Jazz', '', 'Collection']
             ];
+            
+            // Apply Alphabetical sort for preview as well
+            collectionData = rawData.sort((a, b) => {
+                let artistA = (a[2] || 'Unknown').toLowerCase();
+                let artistB = (b[2] || 'Unknown').toLowerCase();
+                return artistA.localeCompare(artistB);
+            });
+            
             document.getElementById('sync-status').textContent = 'Preview';
             document.getElementById('collection-loading').classList.add('hidden');
             renderFilters();
