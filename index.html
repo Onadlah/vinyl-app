@@ -53,10 +53,10 @@
 
     <script>
         // ==========================================
-        // 🛑 IMPORTANT: PASTE YOUR KEYS HERE 🛑
+        // 🔒 KEYS ARE NOW LOADED FROM DEVICE STORAGE 
         // ==========================================
-        const YOUR_GOOGLE_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxvHYu3RPNSTFCLQMc8yZ15zNqFK1SI4nAGYVEqmAs8jgTdTIwB6iRXNlNuC8V5LLBwzg/exec";
-        const YOUR_DISCOGS_TOKEN = "BOCurUioPwuIFSntYKnKzhwKdWISmOEaFqPUMclj";
+        let YOUR_GOOGLE_WEB_APP_URL = localStorage.getItem('googleSheetUrl') || "";
+        let YOUR_DISCOGS_TOKEN = localStorage.getItem('discogsToken') || "";
         
         // Global State
         let collectionData = [];
@@ -164,18 +164,47 @@
                 <p class="text-slate-400">No records match your search.</p>
             </div>
         </div>
+
+        <!-- TAB 3: SETTINGS (NEW) -->
+        <div id="tab-settings" class="hidden space-y-4">
+            <h2 class="text-2xl font-semibold px-2 mb-2">Settings</h2>
+            <div class="glass p-6 rounded-3xl space-y-5 shadow-xl border border-slate-700/50">
+                <div class="flex items-start gap-3 bg-indigo-500/10 p-4 rounded-xl border border-indigo-500/20">
+                    <svg class="w-6 h-6 text-indigo-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+                    <p class="text-xs text-indigo-200 leading-relaxed">Your API keys are stored securely in this device's local memory. They will not be uploaded to GitHub or the internet.</p>
+                </div>
+                
+                <div>
+                    <label class="block text-xs font-medium text-slate-400 mb-1.5 ml-1">Google Web App URL</label>
+                    <input type="password" id="input-google-url" placeholder="https://script.google.com/macros/s/..." class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition-colors text-white placeholder-slate-600 shadow-inner">
+                </div>
+                
+                <div>
+                    <label class="block text-xs font-medium text-slate-400 mb-1.5 ml-1">Discogs API Token</label>
+                    <input type="password" id="input-discogs-token" placeholder="Your Discogs Token" class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition-colors text-white placeholder-slate-600 shadow-inner">
+                </div>
+                
+                <button onclick="saveSettings()" class="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 transition-colors rounded-xl font-semibold flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20 mt-2">
+                    Save Keys to Device
+                </button>
+            </div>
+        </div>
     </main>
 
     <!-- Bottom Navigation -->
     <nav class="fixed bottom-0 left-0 w-full glass border-t-0 pb-safe z-40">
         <div class="flex justify-around items-center p-3">
-            <button onclick="switchTab('scanner')" id="nav-scanner" class="flex flex-col items-center p-2 text-indigo-400 transition-colors">
+            <button onclick="switchTab('scanner')" id="nav-scanner" class="flex flex-col items-center p-2 text-indigo-400 transition-colors w-20">
                 <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm14 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/></svg>
-                <span class="text-xs font-medium">Scanner</span>
+                <span class="text-[10px] font-medium">Scanner</span>
             </button>
-            <button onclick="switchTab('collection')" id="nav-collection" class="flex flex-col items-center p-2 text-slate-500 transition-colors">
+            <button onclick="switchTab('collection')" id="nav-collection" class="flex flex-col items-center p-2 text-slate-500 transition-colors w-20">
                 <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
-                <span class="text-xs font-medium">Library</span>
+                <span class="text-[10px] font-medium">Library</span>
+            </button>
+            <button onclick="switchTab('settings')" id="nav-settings" class="flex flex-col items-center p-2 text-slate-500 transition-colors w-20">
+                <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                <span class="text-[10px] font-medium">Settings</span>
             </button>
         </div>
     </nav>
@@ -373,6 +402,7 @@
             activeTab = tabId;
             document.getElementById('tab-scanner').classList.toggle('hidden', tabId !== 'scanner');
             document.getElementById('tab-collection').classList.toggle('hidden', tabId !== 'collection');
+            document.getElementById('tab-settings').classList.toggle('hidden', tabId !== 'settings');
             
             document.getElementById('nav-scanner').classList.toggle('text-indigo-400', tabId === 'scanner');
             document.getElementById('nav-scanner').classList.toggle('text-slate-500', tabId !== 'scanner');
@@ -380,14 +410,39 @@
             document.getElementById('nav-collection').classList.toggle('text-indigo-400', tabId === 'collection');
             document.getElementById('nav-collection').classList.toggle('text-slate-500', tabId !== 'collection');
 
+            document.getElementById('nav-settings').classList.toggle('text-indigo-400', tabId === 'settings');
+            document.getElementById('nav-settings').classList.toggle('text-slate-500', tabId !== 'settings');
+
+            if (tabId === 'settings') {
+                document.getElementById('input-google-url').value = YOUR_GOOGLE_WEB_APP_URL || '';
+                document.getElementById('input-discogs-token').value = YOUR_DISCOGS_TOKEN || '';
+            }
+
             if (tabId !== 'scanner' && html5QrCode) {
                 stopScanner();
             }
 
             if (tabId === 'collection') {
-                // Initial load if array is empty, otherwise just render
                 if (collectionData.length === 0) fetchCollection();
                 else renderCollection();
+            }
+        }
+
+        // --- Settings Management ---
+        function saveSettings() {
+            const gUrl = document.getElementById('input-google-url').value.trim();
+            const dToken = document.getElementById('input-discogs-token').value.trim();
+            
+            localStorage.setItem('googleSheetUrl', gUrl);
+            localStorage.setItem('discogsToken', dToken);
+            
+            YOUR_GOOGLE_WEB_APP_URL = gUrl;
+            YOUR_DISCOGS_TOKEN = dToken;
+            
+            showToast('Settings saved securely to this device!', 'success');
+            
+            if (YOUR_GOOGLE_WEB_APP_URL) {
+                fetchCollection(true);
             }
         }
 
@@ -409,8 +464,8 @@
 
         // --- STREAMING_CHUNK:Implementing Discogs Search... ---
         async function fetchFromDiscogs(query, isBarcode = true) {
-            if (YOUR_DISCOGS_TOKEN.includes("YOUR_")) {
-                showToast("Please add your Discogs API Token in the code.", "error");
+            if (!YOUR_DISCOGS_TOKEN || YOUR_DISCOGS_TOKEN.includes("YOUR_")) {
+                showToast("Please add your Discogs API Token in Settings.", "error");
                 return null;
             }
 
@@ -542,8 +597,8 @@
         }
 
         async function submitToGoogleSheet() {
-            if (YOUR_GOOGLE_WEB_APP_URL.includes("YOUR_")) {
-                showToast("Please add your Google Web App URL.", "error");
+            if (!YOUR_GOOGLE_WEB_APP_URL || YOUR_GOOGLE_WEB_APP_URL.includes("YOUR_")) {
+                showToast("Please add your Google Web App URL in Settings.", "error");
                 return;
             }
 
@@ -555,23 +610,21 @@
                 return;
             }
 
-            // IRONCLAD DUPLICATE CHECK
+            // IRONCLAD DUPLICATE CHECK (Fixed to prevent number crashes)
             const isDuplicate = collectionData.some(row => {
-                const rowId = row[1];
-                const rowArtist = (row[2] || '').toLowerCase();
-                const rowAlbum = (row[3] || '').toLowerCase();
+                const rowId = String(row[1] || '');
+                const rowArtist = String(row[2] || '').toLowerCase();
+                const rowAlbum = String(row[3] || '').toLowerCase();
                 
-                // Match by Discogs ID (if we have one)
-                if (currentRelease.id && rowId == currentRelease.id) return true;
-                // Match by exact text string
-                if (rowArtist === artistInput.toLowerCase() && rowAlbum === albumInput.toLowerCase()) return true;
+                if (currentRelease.id && rowId === String(currentRelease.id)) return true;
+                if (rowArtist === String(artistInput).toLowerCase() && rowAlbum === String(albumInput).toLowerCase()) return true;
                 
                 return false;
             });
 
             if (isDuplicate) {
                 showToast("Error: This album is already in your library!", "error");
-                return; // Stop the save
+                return; 
             }
 
             const btn = document.getElementById('submit-btn');
@@ -586,12 +639,12 @@
 
             const payload = {
                 releaseId: currentRelease.id || `MANUAL-${Date.now()}`,
-                artist: artistInput,
-                album: albumInput,
-                year: document.getElementById('form-year').value,
+                artist: String(artistInput),
+                album: String(albumInput),
+                year: String(document.getElementById('form-year').value),
                 vinylCondition: document.getElementById('form-vinyl-cond').value,
                 sleeveCondition: document.getElementById('form-sleeve-cond').value,
-                notes: document.getElementById('form-notes').value,
+                notes: String(document.getElementById('form-notes').value),
                 imageUrl: document.getElementById('form-thumb').src,
                 genre: extractedGenre,
                 discogsUrl: dUrl,
@@ -599,22 +652,21 @@
             };
 
             try {
-                // The False-Error Fix: using await with no-cors.
-                await fetch(YOUR_GOOGLE_WEB_APP_URL, {
+                // Fire and forget mechanism to prevent freezing
+                const request = fetch(YOUR_GOOGLE_WEB_APP_URL, {
                     method: 'POST',
                     mode: 'no-cors',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
                 
-                // If the fetch doesn't hard-fail (network down), we assume success!
+                // Wait a max of 2.5 seconds, then assume success and close
+                const timeout = new Promise(resolve => setTimeout(resolve, 2500));
+                await Promise.race([request, timeout]);
+                
                 showToast(`Successfully added to ${payload.status}!`, 'success');
                 closeModal('form-modal');
-                
-                // Reset scanner workflow
                 clearSearchUI();
-                
-                // Secretly fetch collection in background to sync database
                 fetchCollection(true);
                 
             } catch (error) {
@@ -629,7 +681,7 @@
         let currentFilter = 'All';
 
         async function fetchCollection(isBackground = false) {
-            if (YOUR_GOOGLE_WEB_APP_URL.includes("YOUR_")) {
+            if (!YOUR_GOOGLE_WEB_APP_URL || YOUR_GOOGLE_WEB_APP_URL.includes("YOUR_")) {
                 if (!isBackground) loadMockData();
                 return;
             }
