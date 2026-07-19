@@ -1,1 +1,689 @@
-<h1>Vinyl App Coming Soon!</h1>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    
+    <!-- PWA / Native App Meta Tags -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#0b1120">
+    <title>Vinyl Collection Tracker</title>
+    
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- HTML5 QR Code library for barcode scanning -->
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+
+    <!-- Google Fonts for a modern look -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+
+    <!-- Custom Tailwind Configuration -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Outfit', 'sans-serif'],
+                    },
+                    colors: {
+                        slate: {
+                            850: '#151e2e',
+                            950: '#0b1120',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Custom UI Enhancements */
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.6);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        /* Hide scrollbar for a cleaner look but keep functionality */
+        ::-webkit-scrollbar { width: 0px; background: transparent; }
+        
+        /* Scanner wrapper styling override */
+        #reader { border: none !important; }
+        #reader__dashboard_section_csr button {
+            background: #4f46e5 !important;
+            color: white !important;
+            border-radius: 8px !important;
+            padding: 8px 16px !important;
+            border: none !important;
+            margin-top: 10px !important;
+            font-family: 'Outfit', sans-serif !important;
+            font-weight: 600 !important;
+        }
+        #reader video {
+            border-radius: 12px;
+            object-fit: cover;
+        }
+    </style>
+</head>
+
+<body class="bg-slate-950 text-slate-200 font-sans antialiased pb-24 min-h-screen relative overflow-x-hidden">
+
+    <!-- Ambient Background Glows -->
+    <div class="fixed top-[-10%] left-[-10%] w-96 h-96 bg-indigo-600/20 rounded-full blur-[120px] pointer-events-none z-0"></div>
+    <div class="fixed bottom-[-10%] right-[-10%] w-96 h-96 bg-purple-600/10 rounded-full blur-[120px] pointer-events-none z-0"></div>
+
+    <!-- Custom Toast Notification Container -->
+    <div id="toast-container" class="fixed top-6 left-0 right-0 z-[100] flex justify-center pointer-events-none transition-all duration-300 opacity-0 -translate-y-full">
+        <div id="toast-message" class="bg-rose-500 text-white px-6 py-3 rounded-full shadow-xl shadow-rose-500/20 font-semibold text-sm backdrop-blur-md bg-opacity-90 flex items-center gap-2">
+            <!-- Message injected here -->
+        </div>
+    </div>
+
+    <!-- ========================================== -->
+    <!-- REPLACE THESE TWO VARIABLES WITH YOUR KEYS -->
+    <!-- ========================================== -->
+    <script>
+        const YOUR_GOOGLE_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxvHYu3RPNSTFCLQMc8yZ15zNqFK1SI4nAGYVEqmAs8jgTdTIwB6iRXNlNuC8V5LLBwzg/exec";
+        const YOUR_DISCOGS_TOKEN = "BOCurUioPwuIFSntYKnKzhwKdWISmOEaFqPUMclj";
+    </script>
+    <!-- ========================================== -->
+
+    <!-- Header -->
+    <header class="glass-panel sticky top-0 z-50 px-4 py-4 mb-6 border-b border-slate-800">
+        <div class="max-w-lg mx-auto flex flex-col gap-4">
+            <h1 class="text-2xl font-bold tracking-widest text-center">
+                VINYL<span class="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">TRACKER</span>
+            </h1>
+            
+            <!-- Sleek Segmented Control Tabs -->
+            <div class="flex bg-slate-900/50 p-1 rounded-xl border border-slate-700/50">
+                <button onclick="switchTab('scanner')" id="tab-scanner" class="flex-1 py-2 bg-indigo-600 text-white rounded-lg shadow-md shadow-indigo-500/20 transition-all font-semibold text-sm">
+                    Scan & Add
+                </button>
+                <button onclick="switchTab('collection')" id="tab-collection" class="flex-1 py-2 text-slate-400 hover:text-slate-200 transition-all font-semibold text-sm">
+                    My Collection
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="px-4 max-w-lg mx-auto relative z-10">
+
+        <!-- TAB 1: SCANNER & ADD -->
+        <section id="scanner-section" class="animate-fade-in">
+            
+            <!-- Camera / Search Area -->
+            <div class="glass-panel rounded-3xl p-5 mb-6 shadow-2xl">
+                
+                <!-- Barcode Scanner Window -->
+                <div id="reader-wrapper" class="w-full rounded-2xl overflow-hidden mb-5 hidden border-2 border-indigo-500/50 shadow-[0_0_15px_rgba(79,70,229,0.3)]">
+                    <div id="reader" class="w-full bg-black"></div>
+                </div>
+
+                <button id="start-scan-btn" onclick="startScanner()" class="w-full bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 text-white font-bold py-4 px-4 rounded-2xl mb-5 flex items-center justify-center gap-3 shadow-lg shadow-indigo-500/25 transition-all active:scale-[0.98]">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    Start Camera Scanner
+                </button>
+                <button id="stop-scan-btn" onclick="stopScanner()" class="w-full bg-slate-800 border border-slate-700 hover:bg-slate-700 text-white font-bold py-4 px-4 rounded-2xl mb-5 hidden transition-all">
+                    Stop Camera
+                </button>
+
+                <!-- Divider -->
+                <div class="flex items-center gap-3 mb-5">
+                    <div class="flex-1 h-px bg-slate-700"></div>
+                    <span class="text-xs text-slate-400 uppercase tracking-wider font-semibold">Or Search Manually</span>
+                    <div class="flex-1 h-px bg-slate-700"></div>
+                </div>
+
+                <!-- Manual Search -->
+                <div class="flex gap-2">
+                    <input type="text" id="manual-search-input" placeholder="e.g., Beatles Abbey Road" class="w-full bg-slate-900 border border-slate-700 text-white rounded-xl p-3 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all placeholder-slate-500">
+                    <button onclick="manualSearch()" class="bg-slate-700 text-white px-5 py-3 rounded-xl hover:bg-slate-600 transition-all font-semibold flex items-center justify-center">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    </button>
+                </div>
+                
+                <!-- Loading State -->
+                <div id="search-status" class="hidden mt-4 flex items-center justify-center gap-2 text-indigo-400 text-sm font-semibold">
+                    <svg class="animate-spin h-4 w-4 text-indigo-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    Searching Discogs...
+                </div>
+            </div>
+
+            <!-- Warning: Duplicate Found -->
+            <div id="duplicate-warning" class="bg-rose-500/20 border border-rose-500/50 rounded-2xl p-4 mb-6 hidden backdrop-blur-sm">
+                <div class="flex items-start gap-3 text-rose-400">
+                    <svg class="w-6 h-6 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                    <div>
+                        <p class="font-bold text-rose-300">Duplicate Warning!</p>
+                        <p class="text-sm">This Release ID is already in your collection.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Record Details & Form (Hidden until record found) -->
+            <div id="record-form-section" class="glass-panel rounded-3xl p-5 shadow-2xl hidden">
+                
+                <!-- Album Info Header -->
+                <div class="flex gap-4 mb-6">
+                    <div class="relative w-28 h-28 flex-shrink-0">
+                        <!-- Decorative Vinyl Record sticking out -->
+                        <div class="absolute inset-0 bg-black rounded-full shadow-[0_0_10px_rgba(0,0,0,0.5)] right-[-15px] z-0 flex items-center justify-center border border-slate-800">
+                            <div class="w-10 h-10 bg-slate-900 rounded-full border border-slate-700"></div>
+                        </div>
+                        <img id="record-image" src="" alt="Album Art" class="w-full h-full object-cover rounded-xl shadow-lg relative z-10 border border-slate-700 bg-slate-800">
+                    </div>
+                    <div class="flex flex-col justify-center overflow-hidden">
+                        <h3 id="record-title" class="font-bold text-xl leading-tight text-white truncate w-full">Album Title</h3>
+                        <p id="record-artist" class="text-indigo-400 text-sm font-semibold truncate w-full mt-1">Artist</p>
+                        <div class="flex items-center gap-2 mt-2">
+                            <span id="record-year" class="bg-slate-800 text-xs text-slate-300 px-2 py-1 rounded-md border border-slate-700">Year</span>
+                            <span class="text-xs text-slate-500">ID: <span id="record-id"></span></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Market Prices -->
+                <div class="bg-slate-900/50 p-4 rounded-2xl mb-6 grid grid-cols-2 gap-4 border border-slate-800">
+                    <div>
+                        <span class="block text-slate-500 text-[10px] uppercase tracking-widest font-bold mb-1">Lowest Market</span>
+                        <span id="lowest-price" class="text-lg font-bold text-emerald-400">Fetching...</span>
+                    </div>
+                    <div>
+                        <span class="block text-slate-500 text-[10px] uppercase tracking-widest font-bold mb-1">Avg Suggestion</span>
+                        <span id="suggested-price" class="text-lg font-bold text-sky-400">Fetching...</span>
+                    </div>
+                </div>
+
+                <!-- Input Form -->
+                <form id="add-record-form" onsubmit="submitToGoogleSheet(event)">
+                    <div class="grid grid-cols-2 gap-4 mb-5">
+                        <div class="flex flex-col">
+                            <label class="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2 ml-1">Media Condition</label>
+                            <div class="relative">
+                                <select id="vinyl-condition" class="w-full appearance-none bg-slate-900 border border-slate-700 text-white rounded-xl p-3 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-semibold">
+                                    <option value="M">Mint (M)</option>
+                                    <option value="NM">Near Mint (NM)</option>
+                                    <option value="VG+" selected>Very Good Plus (VG+)</option>
+                                    <option value="VG">Very Good (VG)</option>
+                                    <option value="G">Good (G)</option>
+                                    <option value="P">Poor (P)</option>
+                                </select>
+                                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-slate-400">
+                                    <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex flex-col">
+                            <label class="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2 ml-1">Sleeve Condition</label>
+                            <div class="relative">
+                                <select id="sleeve-condition" class="w-full appearance-none bg-slate-900 border border-slate-700 text-white rounded-xl p-3 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-semibold">
+                                    <option value="M">Mint (M)</option>
+                                    <option value="NM">Near Mint (NM)</option>
+                                    <option value="VG+" selected>Very Good Plus (VG+)</option>
+                                    <option value="VG">Very Good (VG)</option>
+                                    <option value="G">Good (G)</option>
+                                    <option value="P">Poor (P)</option>
+                                </select>
+                                <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-slate-400">
+                                    <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-6">
+                        <label class="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2 ml-1 block">Personal Notes</label>
+                        <input type="text" id="personal-notes" placeholder="e.g., Bought at Amoeba, slightly warped" class="w-full bg-slate-900 border border-slate-700 text-white rounded-xl p-3 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all placeholder-slate-600">
+                    </div>
+                    
+                    <button type="submit" id="submit-btn" class="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-white font-bold py-4 px-4 rounded-2xl text-lg shadow-lg shadow-emerald-500/25 transition-all active:scale-[0.98]">
+                        Save to Collection
+                    </button>
+                    <p id="submit-status" class="text-center text-sm font-bold mt-3 hidden"></p>
+                </form>
+            </div>
+        </section>
+
+        <!-- TAB 2: MY COLLECTION -->
+        <section id="collection-section" class="hidden animate-fade-in">
+            
+            <div class="flex items-center gap-2 mb-4">
+                <input type="text" id="collection-search" placeholder="Filter by artist or album..." onkeyup="filterCollection()" class="w-full bg-slate-900 border border-slate-700 text-white rounded-xl p-3 focus:outline-none focus:border-indigo-500 transition-all placeholder-slate-500 shadow-sm">
+                <button onclick="fetchCollection()" class="bg-slate-800 border border-slate-700 text-slate-300 p-3 rounded-xl hover:bg-slate-700 hover:text-white transition-all shadow-sm" title="Refresh">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                </button>
+            </div>
+
+            <div id="collection-list" class="space-y-3 pb-6">
+                <!-- Records injected here -->
+                <div class="glass-panel rounded-2xl p-6 text-center text-slate-400 border border-slate-800">
+                    <svg class="w-8 h-8 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path></svg>
+                    <p class="text-sm font-medium">Click the refresh icon to load your records.</p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Record Details Modal -->
+    <div id="record-details-modal" class="fixed inset-0 z-[100] hidden flex items-end sm:items-center justify-center pointer-events-none">
+        <!-- Backdrop -->
+        <div class="absolute inset-0 bg-slate-950/80 backdrop-blur-sm pointer-events-auto transition-opacity duration-300 opacity-0" id="modal-backdrop" onclick="closeRecordDetails()"></div>
+        
+        <!-- Modal Content -->
+        <div class="glass-panel w-full sm:w-[90%] sm:max-w-md bg-slate-900 rounded-t-3xl sm:rounded-3xl p-6 relative z-10 pointer-events-auto transform transition-transform duration-300 translate-y-full flex flex-col max-h-[85vh] shadow-2xl border-t border-slate-700" id="modal-content">
+            <!-- Close Button -->
+            <button onclick="closeRecordDetails()" class="absolute top-4 right-4 text-slate-400 hover:text-white bg-slate-800 rounded-full p-2 transition-colors z-20">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+            
+            <div class="flex gap-5 mb-6 mt-2">
+                <img id="modal-image" src="" class="w-28 h-28 object-cover rounded-xl shadow-lg border border-slate-700 bg-slate-800 flex-shrink-0" alt="Cover">
+                <div class="flex flex-col justify-center overflow-hidden flex-1">
+                    <h3 id="modal-title" class="font-bold text-xl leading-tight text-white mb-1">Title</h3>
+                    <p id="modal-artist" class="text-indigo-400 font-semibold mb-2">Artist</p>
+                    <span id="modal-year" class="self-start bg-slate-800 text-xs text-slate-300 px-2 py-1 rounded-md border border-slate-700">Year</span>
+                </div>
+            </div>
+
+            <div class="overflow-y-auto pr-2 flex-1 space-y-4 pb-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="bg-slate-950/50 p-3 rounded-xl border border-slate-800 text-center">
+                        <span class="block text-slate-500 text-[10px] uppercase tracking-widest font-bold mb-1">Vinyl</span>
+                        <span id="modal-vinyl-cond" class="text-white font-bold"></span>
+                    </div>
+                    <div class="bg-slate-950/50 p-3 rounded-xl border border-slate-800 text-center">
+                        <span class="block text-slate-500 text-[10px] uppercase tracking-widest font-bold mb-1">Sleeve</span>
+                        <span id="modal-sleeve-cond" class="text-white font-bold"></span>
+                    </div>
+                </div>
+                
+                <div class="bg-slate-950/50 p-4 rounded-xl border border-slate-800">
+                    <span class="block text-slate-500 text-[10px] uppercase tracking-widest font-bold mb-2">Personal Notes</span>
+                    <p id="modal-notes" class="text-sm text-slate-300 italic"></p>
+                </div>
+                
+                <div class="text-center pt-2">
+                    <span class="text-[10px] text-slate-600">Discogs ID: <span id="modal-id"></span></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Application Logic -->
+    <script>
+        let html5QrcodeScanner;
+        let currentRecordData = {};
+        let googleSheetData = []; 
+
+        // --- Custom Toast Notification ---
+        function showToast(message, isError = false) {
+            const container = document.getElementById('toast-container');
+            const msgEl = document.getElementById('toast-message');
+            
+            // Set message and icon based on type
+            if (isError) {
+                msgEl.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> <span>${message}</span>`;
+                msgEl.className = "bg-rose-600 text-white px-5 py-3 rounded-xl shadow-xl shadow-rose-900/50 font-semibold text-sm flex items-center gap-2 border border-rose-500/50";
+            } else {
+                msgEl.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg> <span>${message}</span>`;
+                msgEl.className = "bg-emerald-600 text-white px-5 py-3 rounded-xl shadow-xl shadow-emerald-900/50 font-semibold text-sm flex items-center gap-2 border border-emerald-500/50";
+            }
+
+            // Animate in
+            container.classList.remove('opacity-0', '-translate-y-full');
+            container.classList.add('opacity-100', 'translate-y-0');
+
+            // Animate out after 3.5s
+            setTimeout(() => {
+                container.classList.remove('opacity-100', 'translate-y-0');
+                container.classList.add('opacity-0', '-translate-y-full');
+            }, 3500);
+        }
+
+        // --- Tab Switching ---
+        function switchTab(tab) {
+            document.getElementById('scanner-section').classList.toggle('hidden', tab !== 'scanner');
+            document.getElementById('collection-section').classList.toggle('hidden', tab !== 'collection');
+            
+            const tabScanner = document.getElementById('tab-scanner');
+            const tabCollection = document.getElementById('tab-collection');
+
+            // Apply active/inactive styles
+            if (tab === 'scanner') {
+                tabScanner.className = "flex-1 py-2 bg-indigo-600 text-white rounded-lg shadow-md shadow-indigo-500/20 transition-all font-semibold text-sm";
+                tabCollection.className = "flex-1 py-2 text-slate-400 hover:text-slate-200 transition-all font-semibold text-sm";
+            } else {
+                tabCollection.className = "flex-1 py-2 bg-indigo-600 text-white rounded-lg shadow-md shadow-indigo-500/20 transition-all font-semibold text-sm";
+                tabScanner.className = "flex-1 py-2 text-slate-400 hover:text-slate-200 transition-all font-semibold text-sm";
+            }
+
+            if(tab === 'collection' && googleSheetData.length === 0) fetchCollection();
+        }
+
+        // ==========================================
+        // SCANNER & DISCOGS SEARCH
+        // ==========================================
+        
+        function startScanner() {
+            document.getElementById('reader-wrapper').classList.remove('hidden');
+            document.getElementById('start-scan-btn').classList.add('hidden');
+            document.getElementById('stop-scan-btn').classList.remove('hidden');
+
+            html5QrcodeScanner = new Html5Qrcode("reader");
+            const config = { fps: 10, qrbox: { width: 250, height: 150 } };
+            
+            html5QrcodeScanner.start({ facingMode: "environment" }, config, 
+                (decodedText) => {
+                    stopScanner();
+                    fetchFromDiscogs(decodedText, true);
+                },
+                (errorMessage) => { /* Ignore regular frame errors */ }
+            ).catch(err => {
+                showToast("Camera error: Ensure you are on HTTPS and gave permission.", true);
+                stopScanner();
+            });
+        }
+
+        function stopScanner() {
+            if(html5QrcodeScanner) {
+                html5QrcodeScanner.stop().then(() => {
+                    document.getElementById('reader-wrapper').classList.add('hidden');
+                    document.getElementById('start-scan-btn').classList.remove('hidden');
+                    document.getElementById('stop-scan-btn').classList.add('hidden');
+                }).catch(e => console.log(e));
+            } else {
+                document.getElementById('reader-wrapper').classList.add('hidden');
+                document.getElementById('start-scan-btn').classList.remove('hidden');
+                document.getElementById('stop-scan-btn').classList.add('hidden');
+            }
+        }
+
+        function manualSearch() {
+            const query = document.getElementById('manual-search-input').value;
+            if(query) fetchFromDiscogs(query, false);
+        }
+
+        async function fetchFromDiscogs(query, isBarcode) {
+            if(!YOUR_DISCOGS_TOKEN.includes("YOUR")) {
+                const searchStatus = document.getElementById('search-status');
+                searchStatus.classList.remove('hidden');
+                document.getElementById('duplicate-warning').classList.add('hidden');
+                document.getElementById('record-form-section').classList.add('hidden');
+
+                const endpoint = isBarcode ? `barcode=${query}` : `q=${encodeURIComponent(query)}`;
+                const url = `https://api.discogs.com/database/search?${endpoint}&type=release&token=${YOUR_DISCOGS_TOKEN}`;
+
+                try {
+                    const response = await fetch(url);
+                    const data = await response.json();
+
+                    if (data.results && data.results.length > 0) {
+                        const release = data.results[0];
+                        populateForm(release);
+                        checkForDuplicate(release.id);
+                        fetchMarketPrices(release.id);
+                    } else {
+                        showToast("No record found in Discogs database.", true);
+                    }
+                } catch (error) {
+                    showToast("Error connecting to Discogs API.", true);
+                } finally {
+                    searchStatus.classList.add('hidden');
+                }
+            } else {
+                showToast("Please add your Discogs Token to the code!", true);
+            }
+        }
+
+        async function fetchMarketPrices(releaseId) {
+            const lowestPriceEl = document.getElementById('lowest-price');
+            const suggestedPriceEl = document.getElementById('suggested-price');
+            lowestPriceEl.innerText = "Loading...";
+            suggestedPriceEl.innerText = "Loading...";
+
+            try {
+                const releaseRes = await fetch(`https://api.discogs.com/releases/${releaseId}?token=${YOUR_DISCOGS_TOKEN}`);
+                const releaseData = await releaseRes.json();
+                lowestPriceEl.innerText = releaseData.lowest_price ? `$${releaseData.lowest_price.toFixed(2)}` : 'N/A';
+
+                const priceRes = await fetch(`https://api.discogs.com/marketplace/price_suggestions/${releaseId}?token=${YOUR_DISCOGS_TOKEN}`);
+                if (priceRes.ok) {
+                    const priceData = await priceRes.json();
+                    suggestedPriceEl.innerText = priceData["Very Good Plus (VG+)"]?.value ? `$${priceData["Very Good Plus (VG+)"]?.value.toFixed(2)}` : 'N/A';
+                } else {
+                    suggestedPriceEl.innerText = "N/A";
+                }
+            } catch (error) {
+                lowestPriceEl.innerText = "Error";
+                suggestedPriceEl.innerText = "Error";
+            }
+        }
+
+        function populateForm(release) {
+            let artist = "Unknown";
+            let title = release.title;
+            if (release.title.includes(" - ")) {
+                const parts = release.title.split(" - ");
+                artist = parts[0];
+                title = parts.slice(1).join(" - ");
+            }
+
+            currentRecordData = {
+                releaseId: release.id,
+                artist: artist,
+                album: title,
+                year: release.year || 'Unknown',
+                imageUrl: release.cover_image
+            };
+
+            document.getElementById('record-image').src = release.cover_image;
+            document.getElementById('record-title').innerText = title;
+            document.getElementById('record-artist').innerText = artist;
+            document.getElementById('record-year').innerText = currentRecordData.year;
+            document.getElementById('record-id').innerText = release.id;
+            
+            document.getElementById('record-form-section').classList.remove('hidden');
+        }
+
+        // ==========================================
+        // GOOGLE SHEETS COMMUNICATION
+        // ==========================================
+
+        async function fetchCollection() {
+            if(YOUR_GOOGLE_WEB_APP_URL.includes("YOUR")) {
+                // INJECT MOCK DATA SO YOU CAN PREVIEW THE UI
+                googleSheetData = [
+                    ["Header", "Header", "Header", "Header", "Header", "Header", "Header", "Header", "Header"],
+                    ["", "1", "Pink Floyd", "The Dark Side Of The Moon", "1973", "VG+", "VG", "Classic", "https://images.unsplash.com/photo-1629274488349-92c90c9b7405?w=150&h=150&fit=crop"],
+                    ["", "2", "Fleetwood Mac", "Rumours", "1977", "NM", "NM", "Original pressing", "https://images.unsplash.com/photo-1599839619722-39751411ea63?w=150&h=150&fit=crop"],
+                    ["", "3", "Miles Davis", "Kind of Blue", "1959", "VG+", "VG+", "Record store day find", "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=150&h=150&fit=crop"],
+                    ["", "4", "Daft Punk", "Random Access Memories", "2013", "M", "M", "Sealed 180g", "https://images.unsplash.com/photo-1535907455856-bb61bb08013d?w=150&h=150&fit=crop"]
+                ];
+                renderCollection();
+                return;
+            }
+            
+            const listEl = document.getElementById('collection-list');
+            listEl.innerHTML = `
+                <div class="flex justify-center p-6">
+                    <svg class="animate-spin h-6 w-6 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                </div>`;
+            
+            try {
+                const response = await fetch(YOUR_GOOGLE_WEB_APP_URL);
+                googleSheetData = await response.json(); 
+                renderCollection();
+            } catch (error) {
+                listEl.innerHTML = '<div class="text-rose-400 p-4 text-center glass-panel rounded-xl text-sm">Error loading database. Check URL.</div>';
+            }
+        }
+
+        function checkForDuplicate(releaseId) {
+            if (googleSheetData.length === 0 && !YOUR_GOOGLE_WEB_APP_URL.includes("YOUR")) {
+                fetch(YOUR_GOOGLE_WEB_APP_URL)
+                    .then(res => res.json())
+                    .then(data => {
+                        googleSheetData = data;
+                        checkLogic(releaseId);
+                    });
+            } else {
+                checkLogic(releaseId);
+            }
+
+            function checkLogic(id) {
+                const isDuplicate = googleSheetData.some(row => row[1] == id);
+                if (isDuplicate) {
+                    document.getElementById('duplicate-warning').classList.remove('hidden');
+                }
+            }
+        }
+
+        async function submitToGoogleSheet(e) {
+            e.preventDefault();
+            const submitBtn = document.getElementById('submit-btn');
+            
+            if(YOUR_GOOGLE_WEB_APP_URL.includes("YOUR")) {
+                showToast("Add your Google Web App URL to the code first!", true);
+                return;
+            }
+
+            const originalBtnHtml = submitBtn.innerHTML;
+            submitBtn.innerHTML = `<svg class="animate-spin h-5 w-5 mx-auto text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>`;
+            submitBtn.disabled = true;
+            submitBtn.classList.add('opacity-75');
+
+            const payload = {
+                ...currentRecordData,
+                vinylCondition: document.getElementById('vinyl-condition').value,
+                sleeveCondition: document.getElementById('sleeve-condition').value,
+                notes: document.getElementById('personal-notes').value
+            };
+
+            try {
+                await fetch(YOUR_GOOGLE_WEB_APP_URL, {
+                    method: 'POST',
+                    body: JSON.stringify(payload)
+                });
+                
+                showToast("Album successfully added to your collection!");
+                
+                // Add to local data so duplicate check works immediately
+                googleSheetData.push(["", payload.releaseId, payload.artist, payload.album, payload.year, payload.vinylCondition, payload.sleeveCondition, payload.notes, payload.imageUrl]);
+                
+                // Reset form
+                setTimeout(() => {
+                    document.getElementById('record-form-section').classList.add('hidden');
+                    document.getElementById('duplicate-warning').classList.add('hidden');
+                    document.getElementById('manual-search-input').value = '';
+                    submitBtn.innerHTML = originalBtnHtml;
+                    submitBtn.disabled = false;
+                    submitBtn.classList.remove('opacity-75');
+                }, 1000);
+
+            } catch (error) {
+                showToast("Failed to save to Google Sheets.", true);
+                submitBtn.innerHTML = originalBtnHtml;
+                submitBtn.disabled = false;
+                submitBtn.classList.remove('opacity-75');
+            }
+        }
+
+        // ==========================================
+        // COLLECTION VIEW & FILTERING
+        // ==========================================
+
+        function renderCollection(filterText = "") {
+            const listEl = document.getElementById('collection-list');
+            listEl.innerHTML = '';
+
+            const records = googleSheetData.slice(1).reverse(); 
+
+            records.forEach(row => {
+                const releaseId = row[1];
+                const artist = row[2] || "Unknown";
+                const title = row[3] || "Unknown";
+                const year = row[4] || "";
+                const img = row[8] || "https://placehold.co/150x150/1e293b/a5b4fc?text=Vinyl";
+                
+                const searchStr = `${artist} ${title}`.toLowerCase();
+                if (filterText && !searchStr.includes(filterText.toLowerCase())) return;
+
+                const card = `
+                    <div onclick="showRecordDetails('${releaseId}')" class="cursor-pointer glass-panel flex items-center gap-4 p-3 rounded-2xl shadow-lg border border-slate-700/50 hover:border-indigo-500/50 hover:bg-slate-800/50 transition-all active:scale-[0.98]">
+                        <img src="${img}" class="w-16 h-16 object-cover rounded-xl shadow-md border border-slate-700" alt="Cover" onerror="this.src='https://placehold.co/150x150/1e293b/a5b4fc?text=Cover'">
+                        <div class="overflow-hidden flex-1">
+                            <p class="font-bold text-slate-100 text-[15px] leading-tight truncate">${title}</p>
+                            <p class="text-xs font-semibold text-indigo-400 mt-0.5 truncate">${artist}</p>
+                            <p class="text-[10px] text-slate-500 mt-1 uppercase tracking-wider">${year}</p>
+                        </div>
+                        <div class="pr-2 text-slate-600">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                        </div>
+                    </div>
+                `;
+                listEl.innerHTML += card;
+            });
+
+            if(listEl.innerHTML === '') {
+                listEl.innerHTML = '<div class="glass-panel rounded-2xl p-6 text-center text-slate-400 border border-slate-800"><p class="text-sm">No records found matching that search.</p></div>';
+            }
+        }
+
+        function filterCollection() {
+            const query = document.getElementById('collection-search').value;
+            renderCollection(query);
+        }
+
+        function showRecordDetails(releaseId) {
+            // Find the exact record in our downloaded sheet data
+            const record = googleSheetData.find(row => row[1] == releaseId);
+            if(!record) return;
+
+            // Populate the modal fields
+            document.getElementById('modal-title').innerText = record[3] || "Unknown";
+            document.getElementById('modal-artist').innerText = record[2] || "Unknown";
+            document.getElementById('modal-year').innerText = record[4] || "Unknown";
+            document.getElementById('modal-vinyl-cond').innerText = record[5] || "N/A";
+            document.getElementById('modal-sleeve-cond').innerText = record[6] || "N/A";
+            
+            const notes = record[7] ? record[7] : "No personal notes added.";
+            document.getElementById('modal-notes').innerText = notes;
+            document.getElementById('modal-image').src = record[8] || "https://placehold.co/150x150/1e293b/a5b4fc?text=Cover";
+            document.getElementById('modal-id').innerText = record[1] || "N/A";
+
+            // Show the modal container
+            const modal = document.getElementById('record-details-modal');
+            const backdrop = document.getElementById('modal-backdrop');
+            const content = document.getElementById('modal-content');
+
+            modal.classList.remove('hidden');
+            
+            // Trigger animation frame for smooth slide-up
+            requestAnimationFrame(() => {
+                backdrop.classList.remove('opacity-0');
+                content.classList.remove('translate-y-full');
+            });
+        }
+
+        function closeRecordDetails() {
+            const modal = document.getElementById('record-details-modal');
+            const backdrop = document.getElementById('modal-backdrop');
+            const content = document.getElementById('modal-content');
+
+            // Slide down and fade out
+            backdrop.classList.add('opacity-0');
+            content.classList.add('translate-y-full');
+
+            // Wait for transition to finish before completely hiding
+            setTimeout(() => {
+                modal.classList.add('hidden');
+            }, 300);
+        }
+    </script>
+</body>
+</html>
