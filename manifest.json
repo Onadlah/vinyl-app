@@ -1,20 +1,15 @@
 {
-"name": "Vinyl Database",
-"short_name": "Vinyl Database",
-"start_url": "./index.html",
-"display": "standalone",
-"background_color": "#0f172a",
-"theme_color": "#4f46e5",
-"icons": [
-{
-"src": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1b/Record-Album.svg/192px-Record-Album.svg.png",
-"sizes": "192x192",
-"type": "image/png"
-},
-{
-"src": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/1b/Record-Album.svg/512px-Record-Album.svg.png",
-"sizes": "512x512",
-"type": "image/png"
-}
-]
+  "name": "Vinyl Database",
+  "short_name": "Vinyl",
+  "description": "Scan, catalogue, and search your vinyl record collection.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#4f46e5",
+  "icons": [
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
 }
