@@ -13,7 +13,8 @@
     <meta name="theme-color" content="#0f172a">
 
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/html5-qrcode"></script>
+    <!-- ZXing: reliable 1D barcode decoding on iOS Safari (which has no BarcodeDetector). Pinned for stability. -->
+    <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
     <style>
@@ -47,6 +48,11 @@
         /* Loader */
         .loader { border: 3px solid rgba(255,255,255,0.1); border-radius: 50%; border-top: 3px solid #6366f1; width: 24px; height: 24px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Scanner viewfinder */
+        #scan-video { transform: translateZ(0); } /* nudge iOS to composite the video layer */
+        @keyframes scanmove { 0% { top: 4%; } 50% { top: 96%; } 100% { top: 4%; } }
+        #scan-line { animation: scanmove 2.2s cubic-bezier(0.45, 0, 0.55, 1) infinite; }
     </style>
 </head>
 <body class="bg-slate-900 text-white min-h-screen pb-20 selection:bg-indigo-500 selection:text-white">
@@ -60,7 +66,16 @@
         let collectionData = [];
         let activeTab = 'scanner';
         let currentRelease = {}; 
-        let html5QrCode = null;
+
+        // --- Scanner engine state ---
+        let currentStream = null;   // active MediaStream (we own the camera, not the library)
+        let scanLoopId = null;      // requestAnimationFrame handle for the decode loop
+        let scannerActive = false;  // guards start/stop
+        let decoder = null;         // { detect(canvas) -> code|null } (native BarcodeDetector or ZXing)
+        let zxingReader = null;     // ZXing MultiFormatReader (fallback path)
+        let torchOn = false;
+        // Retail barcode formats only — restricting these massively improves iOS decode reliability & speed.
+        const RETAIL_FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
     </script>
 
     <!-- Background Accents -->
@@ -95,7 +110,21 @@
                 
                 <!-- Camera Viewport Container with Cancel Button -->
                 <div id="reader-container" class="w-full hidden flex-col gap-2">
-                    <div id="reader" class="w-full bg-slate-900 rounded-2xl overflow-hidden border border-slate-700"></div>
+                    <div id="reader" class="relative w-full aspect-[4/3] bg-black rounded-2xl overflow-hidden border border-slate-700">
+                        <!-- playsinline/muted/autoplay are REQUIRED for iOS Safari to show a live camera feed -->
+                        <video id="scan-video" playsinline muted autoplay class="absolute inset-0 w-full h-full object-cover"></video>
+                        <!-- Viewfinder overlay (a wide, short box suits 1D retail barcodes) -->
+                        <div class="absolute inset-0 pointer-events-none flex items-center justify-center">
+                            <div class="relative w-[82%] h-[34%] rounded-lg border-2 border-indigo-400/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.35)] overflow-hidden">
+                                <div id="scan-line" class="absolute left-0 w-full h-0.5 bg-rose-500 shadow-[0_0_10px_2px_rgba(244,63,94,0.8)]"></div>
+                            </div>
+                        </div>
+                        <!-- Torch: only shown on hardware that supports it (hidden on iPhone, which lacks web torch control) -->
+                        <button id="torch-btn" onclick="toggleTorch()" class="hidden absolute top-3 right-3 w-10 h-10 rounded-full bg-slate-900/70 backdrop-blur flex items-center justify-center text-white border border-slate-600">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                        </button>
+                    </div>
+                    <p id="scan-hint" class="text-xs text-slate-400">Fill the box with the barcode on the back of the sleeve. Hold steady.</p>
                     <button onclick="stopScanner()" class="w-full py-3 bg-rose-600 hover:bg-rose-500 transition-colors rounded-xl font-medium text-white shadow-lg shadow-rose-600/20">
                         Cancel Scan
                     </button>
@@ -410,7 +439,7 @@
                 }
             });
 
-            if (tabId !== 'scanner' && html5QrCode) stopScanner();
+            if (tabId !== 'scanner' && scannerActive) stopScanner();
             if (tabId === 'collection') {
                 if (!YOUR_GOOGLE_WEB_APP_URL) {
                     showToast("Please add your Google Sheet URL in Settings.", "warning");
@@ -470,7 +499,7 @@
                 card.onclick = () => prepFormFromAPI(release, artist, album);
                 
                 let thumb = release.thumb || 'https://placehold.co/150x150/1e293b/ffffff?text=No+Cover';
-                let format = release.formats ? release.formats[0] : 'Vinyl';
+                let format = (release.format && release.format[0]) || (release.formats && release.formats[0]) || 'Vinyl';
 
                 card.innerHTML = `
                     <img src="${thumb}" class="w-16 h-16 rounded-lg object-cover shadow">
@@ -487,96 +516,271 @@
             });
         }
 
-        // --- STREAMING_CHUNK:Implementing robust hardware fallback camera... ---
-        function startScanner() {
-            const readerContainer = document.getElementById('reader-container');
-            const scannerButtons = document.getElementById('scanner-buttons');
-            
-            readerContainer.classList.remove('hidden');
-            readerContainer.classList.add('flex');
-            scannerButtons.classList.add('hidden');
-            clearSearchUI();
-            
-            if (!html5QrCode) {
-                html5QrCode = new Html5Qrcode("reader");
+        // ============================================================================
+        //  BARCODE SCANNER ENGINE  (rewritten for iOS reliability)
+        //
+        //  Why the old version failed on iPhone:
+        //   1. iOS Safari has NO native BarcodeDetector, so it silently fell back to
+        //      html5-qrcode's ZXing path, which is notoriously flaky for 1D barcodes.
+        //   2. No format restriction -> the decoder tried every 2D format each frame.
+        //   3. The camera was started inside setTimeout(), which can break iOS's
+        //      "must run inside a user gesture" rule for getUserMedia.
+        //   4. The internal <video> was not guaranteed to be playsinline/muted, so on
+        //      iOS the feed could refuse to play and no frames were ever decoded.
+        //
+        //  This version OWNS the camera (guaranteeing environment-facing + playsinline),
+        //  runs its own throttled decode loop over a cropped central band, and picks the
+        //  best available decoder: the native BarcodeDetector on Android, ZXing on iOS.
+        // ============================================================================
+
+        function showReaderUI() {
+            const rc = document.getElementById('reader-container');
+            rc.classList.remove('hidden');
+            rc.classList.add('flex');
+            document.getElementById('scanner-buttons').classList.add('hidden');
+        }
+
+        function hideReaderUI() {
+            const rc = document.getElementById('reader-container');
+            rc.classList.add('hidden');
+            rc.classList.remove('flex');
+            document.getElementById('scanner-buttons').classList.remove('hidden');
+            const t = document.getElementById('torch-btn');
+            if (t) { t.classList.add('hidden'); t.classList.remove('bg-amber-500'); }
+            torchOn = false;
+        }
+
+        async function startScanner() {
+            if (scannerActive) return;
+
+            // getUserMedia only works on a secure origin (https or localhost).
+            if (!window.isSecureContext) {
+                showToast("Camera needs a secure (https://) connection.", "error");
+                return;
             }
-            
-            setTimeout(() => {
-                const config = { 
-                    fps: 10, 
-                    qrbox: function(viewfinderWidth, viewfinderHeight) {
-                        return { width: viewfinderWidth * 0.8, height: 150 };
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                showToast("This browser can't access the camera.", "error");
+                return;
+            }
+
+            showReaderUI();
+            scannerActive = true;
+            clearSearchUI();
+
+            const video = document.getElementById('scan-video');
+
+            // Open the rear camera at a decent resolution. NOTE: this runs directly in
+            // the tap handler (no setTimeout) so iOS treats it as a user gesture.
+            try {
+                currentStream = await navigator.mediaDevices.getUserMedia({
+                    audio: false,
+                    video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }
+                });
+            } catch (err) {
+                // Some devices choke on the facingMode constraint; retry with anything.
+                try {
+                    currentStream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
+                } catch (err2) {
+                    handleCameraError(err2);
+                    return;
+                }
+            }
+
+            if (!scannerActive) { // user cancelled while permission dialog was open
+                currentStream.getTracks().forEach(t => t.stop());
+                return;
+            }
+
+            video.srcObject = currentStream;
+            video.setAttribute('playsinline', 'true'); // belt-and-suspenders for iOS
+            video.muted = true;
+            try { await video.play(); } catch (e) { /* some iOS builds resolve late; loop still runs */ }
+
+            setupTorch(currentStream);
+
+            try {
+                decoder = await buildDecoder();
+            } catch (e) {
+                handleCameraError(e);
+                return;
+            }
+
+            startDecodeLoop(video);
+        }
+
+        // Choose the fastest reliable decoder available on this device.
+        async function buildDecoder() {
+            // Fast path: native BarcodeDetector (Android Chrome, some desktops).
+            if ('BarcodeDetector' in window) {
+                try {
+                    const supported = await window.BarcodeDetector.getSupportedFormats();
+                    const formats = RETAIL_FORMATS.filter(f => supported.includes(f));
+                    if (formats.length) {
+                        const det = new window.BarcodeDetector({ formats });
+                        return {
+                            engine: 'native',
+                            async detect(canvas) {
+                                const codes = await det.detect(canvas);
+                                return (codes && codes.length) ? codes[0].rawValue : null;
+                            }
+                        };
                     }
+                } catch (e) { /* fall through to ZXing */ }
+            }
+
+            // Fallback path: ZXing (this is what carries iOS Safari).
+            if (typeof ZXing === 'undefined') {
+                throw new Error('Barcode decoder library failed to load.');
+            }
+            const F = ZXing.BarcodeFormat;
+            const hints = new Map();
+            hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [F.EAN_13, F.EAN_8, F.UPC_A, F.UPC_E]);
+            hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+
+            zxingReader = new ZXing.MultiFormatReader();
+            zxingReader.setHints(hints);
+
+            // Prefer ZXing's own canvas luminance source; fall back to a manual grayscale
+            // conversion if that class isn't present in this build.
+            const makeSource = ZXing.HTMLCanvasElementLuminanceSource
+                ? (canvas) => new ZXing.HTMLCanvasElementLuminanceSource(canvas)
+                : (canvas) => {
+                    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+                    const { width: w, height: h } = canvas;
+                    const rgba = ctx.getImageData(0, 0, w, h).data;
+                    const lum = new Uint8ClampedArray(w * h);
+                    for (let i = 0, j = 0; j < lum.length; i += 4, j++) {
+                        lum[j] = (rgba[i] * 77 + rgba[i + 1] * 150 + rgba[i + 2] * 29) >> 8;
+                    }
+                    return new ZXing.RGBLuminanceSource(lum, w, h);
                 };
 
-                html5QrCode.start(
-                    { facingMode: "environment" },
-                    config,
-                    async (decodedText) => {
-                        stopScanner();
-                        showToast(`Barcode Scanned: ${decodedText}`, 'success');
-                        const results = await fetchFromDiscogs(decodedText, true);
-                        if (results) {
-                            const duplicate = collectionData.find(item => String(item[1]) === String(results[0].id));
-                            if (duplicate) showToast(`Warning: Already in your ${duplicate[11] || 'Library'}!`, 'warning');
-                            displaySearchResults(results);
-                        } else {
-                            openManualOverride();
-                            showToast(`Barcode not found. Please enter manually.`, 'warning');
-                        }
-                    },
-                    (errorMessage) => {}
-                ).catch(err => {
-                    console.log("Environment mode failed, falling back to hardware lookup...");
-                    Html5Qrcode.getCameras().then(devices => {
-                        if (devices && devices.length) {
-                            let backCamera = devices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('environment'));
-                            let cameraId = backCamera ? backCamera.id : devices[devices.length - 1].id; 
-                            
-                            html5QrCode.start(
-                                cameraId,
-                                config,
-                                async (decodedText) => {
-                                    stopScanner();
-                                    showToast(`Barcode Scanned: ${decodedText}`, 'success');
-                                    const results = await fetchFromDiscogs(decodedText, true);
-                                    if (results) {
-                                        const duplicate = collectionData.find(item => String(item[1]) === String(results[0].id));
-                                        if (duplicate) showToast(`Warning: Already in your ${duplicate[11] || 'Library'}!`, 'warning');
-                                        displaySearchResults(results);
-                                    } else {
-                                        openManualOverride();
-                                        showToast(`Barcode not found. Please enter manually.`, 'warning');
-                                    }
-                                },
-                                (error) => {}
-                            ).catch(fallbackErr => {
-                                showToast("Camera access denied.", "error");
-                                stopScanner();
-                            });
-                        } else {
-                            showToast("No cameras found.", "error");
-                            stopScanner();
-                        }
-                    }).catch(enumErr => {
-                        showToast("Camera access denied.", "error");
-                        stopScanner();
-                    });
-                });
-            }, 250); 
+            return {
+                engine: 'zxing',
+                detect(canvas) {
+                    try {
+                        const source = makeSource(canvas);
+                        const bitmap = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(source));
+                        const result = zxingReader.decode(bitmap);
+                        return result ? result.getText() : null;
+                    } catch (e) {
+                        return null; // NotFoundException between frames is normal
+                    } finally {
+                        try { zxingReader.reset(); } catch (e) {}
+                    }
+                }
+            };
+        }
+
+        // Grab frames, crop to the aimed band, and feed them to the decoder ~11x/sec.
+        function startDecodeLoop(video) {
+            const work = document.createElement('canvas');
+            const wctx = work.getContext('2d', { willReadFrequently: true });
+            let last = 0;
+            const INTERVAL = 90; // ms between decode attempts (keeps iOS cool & smooth)
+
+            const loop = async (ts) => {
+                if (!scannerActive) return;
+                if (video.readyState >= 2 && video.videoWidth && (ts - last) >= INTERVAL) {
+                    last = ts;
+                    const vw = video.videoWidth, vh = video.videoHeight;
+                    // Crop the central band that matches the on-screen viewfinder box.
+                    const cropW = Math.floor(vw * 0.85);
+                    const cropH = Math.floor(vh * 0.38);
+                    const sx = Math.floor((vw - cropW) / 2);
+                    const sy = Math.floor((vh - cropH) / 2);
+                    // Downscale for speed while keeping bars crisp enough to decode.
+                    const scale = Math.min(1, 800 / cropW);
+                    work.width = Math.max(1, Math.floor(cropW * scale));
+                    work.height = Math.max(1, Math.floor(cropH * scale));
+                    wctx.drawImage(video, sx, sy, cropW, cropH, 0, 0, work.width, work.height);
+
+                    try {
+                        const code = await decoder.detect(work);
+                        if (code) { onScanSuccess(String(code)); return; }
+                    } catch (e) { /* transient decode error, keep going */ }
+                }
+                scanLoopId = requestAnimationFrame(loop);
+            };
+            scanLoopId = requestAnimationFrame(loop);
+        }
+
+        async function onScanSuccess(decodedText) {
+            if (!scannerActive) return;
+            stopScanner();
+            if (navigator.vibrate) { try { navigator.vibrate(60); } catch (e) {} }
+            showToast(`Barcode: ${decodedText}`, 'success');
+
+            const results = await fetchFromDiscogs(decodedText, true);
+            if (results) {
+                const duplicate = collectionData.find(item => String(item[1]) === String(results[0].id));
+                if (duplicate) showToast(`Warning: Already in your ${duplicate[11] || 'Library'}!`, 'warning');
+                displaySearchResults(results);
+            } else {
+                openManualOverride();
+                showToast(`Barcode not found on Discogs. Please enter manually.`, 'warning');
+            }
         }
 
         function stopScanner() {
-            if (html5QrCode && html5QrCode.isScanning) {
-                html5QrCode.stop().then(() => {
-                    document.getElementById('reader-container').classList.add('hidden');
-                    document.getElementById('reader-container').classList.remove('flex');
-                    document.getElementById('scanner-buttons').classList.remove('hidden');
-                }).catch(err => console.log(err));
+            scannerActive = false;
+
+            if (scanLoopId) { cancelAnimationFrame(scanLoopId); scanLoopId = null; }
+
+            if (currentStream) {
+                currentStream.getTracks().forEach(t => { try { t.stop(); } catch (e) {} });
+                currentStream = null;
+            }
+
+            const video = document.getElementById('scan-video');
+            if (video) { try { video.pause(); } catch (e) {} video.srcObject = null; }
+
+            zxingReader = null;
+            decoder = null;
+            hideReaderUI();
+        }
+
+        function handleCameraError(err) {
+            scannerActive = false;
+            if (currentStream) { currentStream.getTracks().forEach(t => t.stop()); currentStream = null; }
+            hideReaderUI();
+
+            let msg = "Couldn't start the camera.";
+            if (err && err.name) {
+                if (err.name === 'NotAllowedError' || err.name === 'SecurityError')
+                    msg = "Camera permission was denied. Enable it in your browser settings and retry.";
+                else if (err.name === 'NotFoundError' || err.name === 'OverconstrainedError')
+                    msg = "No suitable camera was found on this device.";
+                else if (err.name === 'NotReadableError')
+                    msg = "The camera is busy in another app. Close it and try again.";
+            }
+            showToast(msg, "error");
+            console.error('[Scanner]', err);
+        }
+
+        // Torch is only exposed where the hardware/browser supports it (not iPhone).
+        function setupTorch(stream) {
+            const btn = document.getElementById('torch-btn');
+            if (!btn) return;
+            const track = stream.getVideoTracks()[0];
+            const caps = (track && track.getCapabilities) ? track.getCapabilities() : {};
+            if (caps && caps.torch) {
+                btn.classList.remove('hidden');
             } else {
-                document.getElementById('reader-container').classList.add('hidden');
-                document.getElementById('reader-container').classList.remove('flex');
-                document.getElementById('scanner-buttons').classList.remove('hidden');
+                btn.classList.add('hidden');
+            }
+        }
+
+        async function toggleTorch() {
+            if (!currentStream) return;
+            const track = currentStream.getVideoTracks()[0];
+            torchOn = !torchOn;
+            try {
+                await track.applyConstraints({ advanced: [{ torch: torchOn }] });
+                document.getElementById('torch-btn').classList.toggle('bg-amber-500', torchOn);
+            } catch (e) {
+                showToast("Torch isn't available on this device.", "warning");
+                torchOn = false;
             }
         }
 
