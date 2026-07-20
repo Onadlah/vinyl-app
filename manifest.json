@@ -1,6 +1,6 @@
 {
-"name": "Vinyl App Database",
-"short_name": "Vinyl App Database",
+"name": "Vinyl Database",
+"short_name": "Vinyl Database",
 "start_url": "./index.html",
 "display": "standalone",
 "background_color": "#0f172a",
