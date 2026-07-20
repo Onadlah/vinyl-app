@@ -1025,6 +1025,13 @@
 
             openModal('detail-modal');
         }
+
+        // Register the service worker — required for Android Chrome to offer "Install app".
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function () {
+                navigator.serviceWorker.register('./sw.js').catch(function () { /* ignore if unsupported */ });
+            });
+        }
     </script>
 </body>
 </html>
