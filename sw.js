@@ -1,7 +1,6 @@
 self.addEventListener('install', (event) => {
-    // Forces the browser to activate this script immediately
+    // Activate this worker immediately.
     self.skipWaiting();
-    console.log('[Service Worker] Installed and Activated');
 });
 
 self.addEventListener('activate', (event) => {
@@ -9,5 +8,6 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-    // Leave empty to bypass PWA security check safely
+    // No offline caching (the app needs the network for Discogs + Google Sheets).
+    // A fetch handler must exist for the app to be installable on Android Chrome.
 });
