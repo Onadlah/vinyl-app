@@ -160,7 +160,14 @@
         <div id="tab-collection" class="hidden space-y-4">
             <!-- Filters & Search -->
             <div class="space-y-3 pb-2">
-                <h2 class="text-2xl font-semibold px-2">My Library</h2>
+                <div class="flex items-center justify-between px-2">
+                    <h2 class="text-2xl font-semibold">My Library</h2>
+                    <button onclick="toggleStats()" id="stats-toggle" class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 transition-colors">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6m4 6V4m4 15v-9"/></svg>
+                        Stats
+                    </button>
+                </div>
+                <div id="stats-panel" class="hidden px-2"></div>
                 
                 <!-- Live Search Bar -->
                 <div class="px-2 pb-1">
@@ -907,6 +914,7 @@
                 if (activeTab === 'collection' || isBackground) {
                     renderFilters();
                     renderCollection();
+                    renderStats();
                 }
             } catch (error) {
                 document.getElementById('sync-status').textContent = 'Error';
@@ -914,6 +922,99 @@
             } finally {
                 if (!isBackground) document.getElementById('collection-loading').classList.add('hidden');
             }
+        }
+
+        function toggleStats() {
+            const panel = document.getElementById('stats-panel');
+            const btn = document.getElementById('stats-toggle');
+            const nowHidden = panel.classList.toggle('hidden');
+            if (!nowHidden) {
+                renderStats();
+                btn.classList.remove('bg-slate-800', 'text-slate-300');
+                btn.classList.add('bg-indigo-600', 'text-white');
+                if (collectionData.length === 0) fetchCollection();
+            } else {
+                btn.classList.add('bg-slate-800', 'text-slate-300');
+                btn.classList.remove('bg-indigo-600', 'text-white');
+            }
+        }
+
+        function renderStats() {
+            const panel = document.getElementById('stats-panel');
+            if (!panel) return;
+            const esc = s => String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+
+            const owned = collectionData.filter(r => (r[11] || 'Collection') === 'Collection');
+            const wishlist = collectionData.filter(r => r[11] === 'Wishlist');
+
+            if (!collectionData.length) {
+                panel.innerHTML = `<div class="glass p-5 rounded-2xl text-center text-slate-400 text-sm">No records yet — add some to unlock your stats.</div>`;
+                return;
+            }
+
+            // Tally artists, genres, decades, conditions from owned records
+            const artistCount = {}, genreCount = {}, decadeCount = {}, condCount = {};
+            const years = [];
+            owned.forEach(r => {
+                const a = String(r[2] || 'Unknown').trim(); artistCount[a] = (artistCount[a] || 0) + 1;
+                const g = String(r[9] || '').trim(); if (g && g !== 'Unknown') genreCount[g] = (genreCount[g] || 0) + 1;
+                const y = parseInt(r[4]); if (y > 1000 && y < 2100) { years.push(y); const d = Math.floor(y / 10) * 10; decadeCount[d] = (decadeCount[d] || 0) + 1; }
+                const c = String(r[5] || 'N/A').trim() || 'N/A'; condCount[c] = (condCount[c] || 0) + 1;
+            });
+
+            const uniqueArtists = Object.keys(artistCount).length;
+            const topArtists = Object.entries(artistCount).sort((a, b) => b[1] - a[1]).slice(0, 5);
+            const genreN = Object.keys(genreCount).length;
+            const topGenres = Object.entries(genreCount).sort((a, b) => b[1] - a[1]).slice(0, 6);
+            const decades = Object.entries(decadeCount).map(([d, c]) => [parseInt(d), c]).sort((a, b) => a[0] - b[0]);
+            const condOrder = ['M', 'NM', 'VG+', 'VG', 'G+', 'G', 'F', 'P', 'N/A'];
+            const conds = condOrder.filter(c => condCount[c]).map(c => [c, condCount[c]]);
+            const oldest = years.length ? Math.min(...years) : null;
+            const newest = years.length ? Math.max(...years) : null;
+
+            const bar = (label, count, max, color = 'bg-indigo-500') =>
+                `<div class="flex items-center gap-2 mb-1.5">
+                    <div class="w-24 text-xs text-slate-300 truncate shrink-0" title="${esc(label)}">${esc(label)}</div>
+                    <div class="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden"><div class="h-full ${color} rounded-full" style="width:${Math.max(4, Math.round(count / max * 100))}%"></div></div>
+                    <div class="w-6 text-right text-xs text-slate-400 font-mono shrink-0">${count}</div>
+                </div>`;
+            const statBox = (v, k, color = 'text-indigo-400') =>
+                `<div class="bg-slate-800/60 rounded-xl p-3 text-center border border-slate-700/50">
+                    <div class="text-2xl font-bold ${color}">${v}</div>
+                    <div class="text-[10px] uppercase tracking-wider text-slate-400 mt-0.5">${k}</div>
+                </div>`;
+            const section = (title, inner) => `<div><div class="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">${title}</div>${inner}</div>`;
+
+            let html = `<div class="glass p-4 rounded-2xl space-y-4 mb-2 border border-slate-700/50">`;
+            html += `<div class="grid grid-cols-4 gap-2">
+                ${statBox(owned.length, 'Records')}
+                ${statBox(uniqueArtists, 'Artists')}
+                ${statBox(genreN, 'Genres')}
+                ${statBox(wishlist.length, 'Wishlist', 'text-amber-400')}
+            </div>`;
+
+            if (topArtists.length && topArtists[0][1] > 1) {
+                const max = topArtists[0][1];
+                html += section('Most collected artists', topArtists.map(([a, c]) => bar(a, c, max)).join(''));
+            }
+            if (decades.length) {
+                const max = Math.max(...decades.map(d => d[1]));
+                html += section('By decade', decades.map(([d, c]) => bar(d + 's', c, max, 'bg-purple-500')).join(''));
+            }
+            if (topGenres.length) {
+                const max = topGenres[0][1];
+                html += section('Top genres', topGenres.map(([g, c]) => bar(g, c, max, 'bg-emerald-500')).join(''));
+            }
+            if (conds.length) {
+                const max = Math.max(...conds.map(c => c[1]));
+                html += section('Media condition', conds.map(([c, n]) => bar(c, n, max, 'bg-sky-500')).join(''));
+            }
+            if (oldest) {
+                const span = newest - oldest;
+                html += `<div class="text-xs text-slate-400 pt-1 border-t border-slate-700/50">Oldest <span class="text-slate-200 font-mono">${oldest}</span> · Newest <span class="text-slate-200 font-mono">${newest}</span>${span > 0 ? ` · spanning <span class="text-slate-200 font-mono">${span}</span> years` : ''}</div>`;
+            }
+            html += `</div>`;
+            panel.innerHTML = html;
         }
 
         function renderFilters() {
